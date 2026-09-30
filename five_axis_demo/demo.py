@@ -7,6 +7,7 @@ NAMES=['base','J1','J2','wrist_A','wrist_B']
 PORTS=[0,1,3,5,4]
 SPD=[3200*r/360 for r in [2,15,15,10,10]]
 SPEED_CAPS=[5,5,10,10,10]
+DEFAULT_KP=[1.2]*5
 MAX_HZ=[math.floor(v*s) for v,s in zip(SPEED_CAPS,SPD)]
 READY='READY FIVE_AXIS_V2 STEP=2,23,0,4,6 DIR=3,22,1,5,7 ENC=0,1,3,5,4 POS=1,0,1,1,1 HZ=88,666,1333,888,888'
 TOL=.35
@@ -33,6 +34,18 @@ def speed_limits(speed=None):
     requested=SPEED_CAPS if speed is None else [speed]*5 if isinstance(speed,(float,int)) else list(speed)
     if len(requested)!=5 or not all(math.isfinite(v) and v>0 for v in requested):raise ValueError('Need five positive finite speed limits')
     return [min(v,c) for v,c in zip(requested,SPEED_CAPS)]
+def gains(values=None):
+    result=list(DEFAULT_KP if values is None else values)
+    if len(result)!=5 or not all(math.isfinite(v) and v>0 for v in result):
+        raise ValueError('Need five positive finite Kp gains (units 1/s)')
+    return result
+def change_gain(current,axis,value):
+    names=[name.lower() for name in NAMES]
+    if axis.lower() not in names:raise ValueError('Axis must be base, j1, j2, wrist_a or wrist_b')
+    result=list(current);result[names.index(axis.lower())]=float(value)
+    return gains(result)
+def corrected_velocity(feedforward,error,kp,limit):
+    return max(-limit,min(limit,feedforward+kp*error))
 def duration(start,target,speed,accel,minimum=3):
     limits=speed_limits(speed)
     if len(start)!=5 or len(target)!=5 or not all(math.isfinite(x) for x in [*start,*target,accel,minimum]) or min(accel,minimum)<=0:raise ValueError('Nonfinite or nonpositive trajectory parameter')
@@ -99,8 +112,9 @@ class PoseBook:
         self.mode='REPLAY'
     def disarm(self):self.mode='TEACH'
 
-def replay(link,tracker,target,speed,accel,minimum,interrupt=None):
+def replay(link,tracker,target,speed,accel,minimum,interrupt=None,kp=None):
     limits=speed_limits(speed)
+    kp=gains(kp)
     start=tracker.update();seconds=duration(start,target,speed,accel,minimum)
     if not all(tracker.good):raise RuntimeError('Fresh feedback required to start')
     print(f'Shared smooth reference: {seconds:.1f}s minimum; completion waits for all five encoders.')
@@ -117,7 +131,7 @@ def replay(link,tracker,target,speed,accel,minimum,interrupt=None):
                 error=reference-pos[i]
                 if abs(error)>4:raise RuntimeError(f'{NAMES[i]} tracking error >4°; stop and check direction/scaling/load')
                 if not min(start[i],target[i])-2<=pos[i]<=max(start[i],target[i])+2:raise RuntimeError(f'{NAMES[i]} moved outside demo travel envelope')
-                requested=max(-limits[i],min(limits[i],ff+1.2*error))
+                requested=corrected_velocity(ff,error,kp[i],limits[i])
                 if t>=seconds and abs(target[i]-pos[i])<=TOL:requested=0
                 velocity=max(previous[i]-accel*dt,min(previous[i]+accel*dt,requested))
                 previous[i]=velocity;rates.append(max(-MAX_HZ[i],min(MAX_HZ[i],round(velocity*SPD[i]))))
@@ -137,8 +151,11 @@ def replay(link,tracker,target,speed,accel,minimum,interrupt=None):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check',action='store_true');parser.add_argument('--speed',type=float,default=None,help='Optional slower common ceiling; never exceeds per-axis caps')
-    parser.add_argument('--accel',type=float,default=2);args=parser.parse_args()
-    try:limits=speed_limits(args.speed)
+    parser.add_argument('--accel',type=float,default=2)
+    parser.add_argument('--kp',type=float,nargs=5,metavar=('BASE','J1','J2','WRIST_A','WRIST_B'),
+                        help='Five position P gains in 1/s; default 1.2 each')
+    args=parser.parse_args()
+    try:limits=speed_limits(args.speed);kp=gains(args.kp)
     except ValueError as e:parser.error(str(e))
     if not 0<args.accel<=3:parser.error('Acceleration must be >0 and <=3 deg/s²')
     ports=glob.glob('/dev/serial/by-id/*Teensy*')
@@ -154,6 +171,8 @@ def main():
         print('When drives are ON and path clear: r = REPLAY. Then numbers MOVE immediately.')
         print('t = return to TEACH; l = list; w = angles; q = quit. Enter during motion stops/disarms.')
         print('No collision avoidance. Caps deg/s:',dict(zip(NAMES,limits)))
+        print('Position P gains (1/s):',dict(zip(NAMES,kp)))
+        print('kp = show gains; kp j1 0.8 = change one gain while idle. Session-only.')
         print('Poses are session-only; saved JSON is an audit log, never auto-loaded. No per-move angle cap: check full path clearance.')
         try:
             while True:
@@ -161,6 +180,11 @@ def main():
                 if not command:continue
                 try:
                     if command=='q':break
+                    if command=='kp':print(dict(zip(NAMES,kp)));continue
+                    if command.startswith('kp '):
+                        fields=command.split()
+                        if len(fields)!=3:raise ValueError('Use kp AXIS VALUE, e.g. kp j1 0.8')
+                        kp=change_gain(kp,fields[1],fields[2]);print('P gains:',dict(zip(NAMES,kp)));continue
                     if command in ('w','where'):print(dict(zip(NAMES,tracker.pos)));continue
                     if command in ('l','list'):print(json.dumps(book.poses,indent=2));continue
                     if command=='t':exchange(link,'STOP');book.disarm();print('TEACH: numbers save. Drive holding current is not disabled.');continue
@@ -171,8 +195,8 @@ def main():
                             log.write_text(json.dumps({'axis_order':NAMES,'encoder_ports':PORTS,'note':'session-relative; not safe to auto-reload','poses':book.poses},indent=2))
                             print('Saved pose',key);continue
                         print('Moving to pose',key)
-                        replay(link,tracker,target,limits,args.accel,3,interrupt=console_stop);continue
-                    print('Use 0,1,2,...; r replay; t teach; l list; w angles; q quit.')
+                        replay(link,tracker,target,limits,args.accel,3,interrupt=console_stop,kp=kp);continue
+                    print('Use 0,1,2,...; r replay; t teach; l list; w angles; kp [axis value]; q quit.')
                 except MotionStopped as e:book.disarm();print(e,'Back in TEACH mode.')
                 except ValueError as e:print(e)
         finally:exchange(link,'STOP')

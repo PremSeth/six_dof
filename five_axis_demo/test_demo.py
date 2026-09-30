@@ -5,6 +5,26 @@ from unittest.mock import patch
 import demo as d
 
 class Tests(unittest.TestCase):
+    def test_independent_gains(self):
+        self.assertEqual(d.gains(),[1.2]*5)
+        original=d.gains()
+        self.assertEqual(d.change_gain(original,'J1','0.8'),[1.2,.8,1.2,1.2,1.2])
+        self.assertEqual(original,[1.2]*5)
+        for axis in ('base','j1','j2','wrist_a','wrist_b'):
+            updated=d.change_gain(original,axis,'2')
+            self.assertEqual(updated[[n.lower() for n in d.NAMES].index(axis)],2)
+        for bad in (0,-1,math.inf,math.nan):
+            with self.assertRaises(ValueError):d.gains([bad]*5)
+        with self.assertRaises(ValueError):d.gains([1]*4)
+        with self.assertRaises(ValueError):d.change_gain(original,'pitch','1')
+
+    def test_p_correction_sign_gain_and_saturation(self):
+        self.assertEqual(d.corrected_velocity(0,2,.5,5),1)
+        self.assertEqual(d.corrected_velocity(0,-2,1.5,5),-3)
+        self.assertEqual(d.corrected_velocity(1,2,1.5,5),4)
+        self.assertEqual(d.corrected_velocity(0,0,100,5),0)
+        for sign in (-1,1):
+            self.assertEqual(d.corrected_velocity(0,sign*10,100,5),sign*5)
     def test_requested_per_axis_caps(self):
         self.assertEqual(d.speed_limits(),[5,5,10,10,10])
         self.assertEqual(d.speed_limits(8),[5,5,8,8,8])
@@ -73,7 +93,7 @@ class Tests(unittest.TestCase):
         self.assertEqual(d.count_delta(0,2**32-1),1)
         self.assertEqual(d.count_delta(2**32-1,0),-1)
     def test_replay_converges_with_half_speed_wrists(self):
-        for efficiency in ([1]*5,[1,1,1,.5,.5]):
+        for efficiency,kp in (([1]*5,None),([1,1,1,.5,.5],None),([1,1,1,.5,.5],[.8,1,1.4,1.6,2])):
             clock=[0.];rates=[0]*5;pos=[0.]*5;last=[0.];commands=[]
             class FakeTracker:
                 good=[True]*5
@@ -87,7 +107,7 @@ class Tests(unittest.TestCase):
                 rates[:]=list(map(int,cmd.split()[1:]));return 'OK VEL'
             goal=[3,-3,2,-5,5]
             with patch.object(d.time,'monotonic',side_effect=lambda:clock[0]),patch.object(d.time,'sleep',side_effect=lambda t:clock.__setitem__(0,clock[0]+max(t,.001))),patch.object(d,'exchange',side_effect=exchange),redirect_stdout(io.StringIO()):
-                d.replay(None,FakeTracker(),goal,2,2,3)
+                d.replay(None,FakeTracker(),goal,2,2,3,kp=kp)
             self.assertEqual(commands[-1],'STOP')
             self.assertTrue(all(abs(a-b)<=d.TOL for a,b in zip(pos,goal)),pos)
             vectors=[list(map(int,c.split()[1:])) for c in commands if c.startswith('VEL')]

@@ -1,5 +1,33 @@
 # Five-axis teach-and-repeat demo
 
+## Independent position P controllers
+
+Each of base, J1, J2, wrist A and wrist B now has its own adjustable Kp.
+The command is `velocity = reference_velocity + Kp * (reference_angle - encoder_angle)`,
+followed by the existing velocity and acceleration limits. Kp has units 1/s.
+This is a shared smooth trajectory with proportional position correction, not
+five independent step-to-target moves or a torque/current controller.
+Default gains remain 1.2 each: these are starting values, not hardware-tuned gains.
+
+At either idle TEACH or REPLAY prompt:
+
+- `kp` displays all gains.
+- `kp j1 0.8` changes only J1's gain, without moving anything.
+- Axis names: `base`, `j1`, `j2`, `wrist_a`, `wrist_b`.
+
+Or start with `python demo.py --kp 1.2 0.8 1.2 1.0 1.0` (same axis order).
+Changes are session-only; pass `--kp` next time to reuse tuned values.
+Use small, clear-path taught moves, change one gain at a time, and stop if it
+oscillates. Larger Kp increases correction but can worsen backlash/oscillation;
+speed ceilings and feedback/watchdog stops remain unchanged. Enter during a
+move stops/disarms; gain commands are for idle prompts, not live motion.
+Wrist P loops regulate the two pre-differential gearbox encoders, not direct
+pitch/roll angles. No sixth-axis controller is included.
+
+This uses the existing FIVE_AXIS_V2 firmware, not the individual J2 firmware.
+Exit any individual motor test before uploading the unified firmware. Then run
+`python demo.py --check` to verify all five encoders without motion.
+
 ## One-handed numbered controls (current)
 
 Start in TEACH mode. Numbers save positions without moving anything:
