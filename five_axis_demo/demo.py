@@ -37,7 +37,6 @@ def duration(start,target,speed,accel,minimum=3):
     limits=speed_limits(speed)
     if len(start)!=5 or len(target)!=5 or not all(math.isfinite(x) for x in [*start,*target,accel,minimum]) or min(accel,minimum)<=0:raise ValueError('Nonfinite or nonpositive trajectory parameter')
     distances=[abs(b-a) for a,b in zip(start,target)]
-    if max(distances)>15:raise ValueError('First demo: each axis must be within 15° of the current pose; teach a closer waypoint.')
     return max([minimum]+[1.875*d/v for d,v in zip(distances,limits)]+[math.sqrt(5.774*d/accel) for d in distances])
 class Tracker:
     def __init__(self,link):
@@ -155,7 +154,7 @@ def main():
         print('When drives are ON and path clear: r = REPLAY. Then numbers MOVE immediately.')
         print('t = return to TEACH; l = list; w = angles; q = quit. Enter during motion stops/disarms.')
         print('No collision avoidance. Caps deg/s:',dict(zip(NAMES,limits)))
-        print('Poses are session-only; saved JSON is an audit log, never auto-loaded. Max15° per axis per move.')
+        print('Poses are session-only; saved JSON is an audit log, never auto-loaded. No per-move angle cap: check full path clearance.')
         try:
             while True:
                 command=tracker.prompt(f'{book.mode} ({"numbers SAVE" if book.mode=="TEACH" else "numbers MOVE"})> ').strip().lower()

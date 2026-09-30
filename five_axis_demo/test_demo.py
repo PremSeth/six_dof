@@ -59,7 +59,15 @@ class Tests(unittest.TestCase):
                 self.assertLessEqual(abs(goal*(60*u-180*u*u+120*u**3)/T**2),2+1e-8)
         for bad in (float('nan'),float('inf'),0,-1):
             with self.assertRaises(ValueError):d.duration([0]*5,target,bad,2)
-        with self.assertRaises(ValueError):d.duration([0]*5,[16,0,0,0,0],2,2)
+    def test_larger_poses_keep_speed_and_acceleration_limits(self):
+        target=[90,-45,30,-60,60]
+        T=d.duration([0]*5,target,None,2)
+        self.assertGreater(T,0)
+        for n in range(101):
+            u=n/100;_,v=d.shape(u)
+            for g,cap in zip(target,d.SPEED_CAPS):
+                self.assertLessEqual(abs(g*v/T),cap+1e-8)
+                self.assertLessEqual(abs(g*(60*u-180*u*u+120*u**3)/T**2),2+1e-8)
     def test_wrap(self):
         self.assertAlmostEqual(d.delta(0,4095),360/4096)
         self.assertEqual(d.count_delta(0,2**32-1),1)

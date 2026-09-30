@@ -16,7 +16,8 @@ Start in TEACH mode. Numbers save positions without moving anything:
 
 Existing numbered poses cannot be overwritten accidentally. Poses are relative
 to this running session; restart to redefine home. Pose logs stay local/private.
-Keep each move within15deg per encoder for the initial demo. No collision avoidance.
+No per-move angle cap. You must check clearance along the ENTIRE interpolated
+path, not just at saved endpoints. No collision avoidance or physical joint limits.
 
 Speed ceilings: base5deg/s,J1 5deg/s,J2 10deg/s,wristA/B each10gearboxdeg/s.
 Default uses these per-axis ceilings. Optional `--speed 2` lowers every ceiling.
@@ -65,8 +66,8 @@ On Pi:
 cd ~/six_dof/five_axis_demo
 ~/.local/share/mamba/envs/six_dof/bin/python demo.py
 ```
-At chosen start pose: `0`. Hand-position the arm a SMALL amount, keeping every
-output encoder within15deg of home, then `1`. Hand-return near home while the
+At chosen start pose: `0`. Hand-position the arm to another safely reachable
+pose, then `1`. Hand-return near home while the
 script continues polling. Enable drives, clear the path and safely remove supports.
 Type `r`, then `1` to replay; `0` returns to home along the joint-space segment.
 Angles unwrap continuously while script runs. Do not reboot logic midway.
@@ -74,7 +75,7 @@ Angles unwrap continuously while script runs. Do not reboot logic midway.
 `w` prints current coordinates; `l` lists poses; `q` exits.
 `--check` reads all five encoders WITHOUT issuing motor commands.
 `--speed` optionally lowers the per-axis ceilings; `--accel` default2deg/s²,max3.
-Single replay maximum15deg per axis. Minimum duration may be extended to obey
+The former15deg per-axis move restriction has been removed. Duration extends to obey
 reference speed/acceleration limits. Firmware axis limits stated above. ±.35deg endpoint
 tolerance. No calibrated physical travel limits; no guarantee path is safe.
 Session-relative poses cannot be auto-loaded; last_taught_poses.json is audit-only.
