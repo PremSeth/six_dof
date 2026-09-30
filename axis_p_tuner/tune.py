@@ -84,7 +84,14 @@ def keyboard_stop():
         sys.stdin.readline();raise MotionStopped('Keyboard stop')
 
 def velocity(error,kp,cap,previous,accel,dt):
-    requested=0 if abs(error)<=TOL else max(-cap,min(cap,kp*error))
+    # Begin braking before P alone would slow down. Reserve 20% deceleration
+    # and at least two nominal control periods for sampling/serial latency.
+    # Aim inside the tolerance band, not at its edge (avoids rounding stalls).
+    distance=max(0.,abs(error)-TOL/2)
+    braking_accel=.8*accel
+    reaction=max(.04,dt)
+    braking_speed=math.sqrt((braking_accel*reaction)**2+2*braking_accel*distance)-braking_accel*reaction
+    requested=0 if abs(error)<=TOL else math.copysign(min(cap,kp*abs(error),braking_speed),error)
     return max(previous-accel*dt,min(previous+accel*dt,requested))
 
 def move(link,pos,target,kp,cap,accel,spd,interrupt=keyboard_stop):
@@ -137,7 +144,7 @@ def main():
         pos=Position(link,spd)
         print(f'{args.axis}: encoder mux{port}, absolute {pos.raw*360/4096:.2f}°, ratio {ratio}:1, 3200 pulses/motor rev')
         if args.check:return
-        print('Pure position P: velocity = Kp × position error, with speed/acceleration limits.')
+        print('Position P with distance-aware braking and speed/acceleration limits; no D term.')
         print('z: set zero; number: target degrees; k 1.2: gain; v 2: speed cap; w: position; q: quit')
         print('Enter during motion stops. Other axes receive NO step pulses. Support gravity-loaded links.')
         print('No automatic stall timeout or physical joint limits. Stay present; keep stop/power accessible.')

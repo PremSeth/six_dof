@@ -14,12 +14,40 @@ class Tests(unittest.TestCase):
         for value in ('nan','inf','0','-1','bad'):
             with self.assertRaises(ValueError):t.positive(value)
     def test_p_gain_sign_deadband_caps_and_acceleration(self):
-        self.assertEqual(t.velocity(2,1,5,0,3,1),2)
-        self.assertEqual(t.velocity(-2,1,5,0,3,1),-2)
-        self.assertEqual(t.velocity(2,.5,5,0,3,1),1)
+        self.assertEqual(t.velocity(2,1,5,2,3,.02),2)
+        self.assertEqual(t.velocity(-2,1,5,-2,3,.02),-2)
+        self.assertEqual(t.velocity(2,.5,5,1,3,.02),1)
         self.assertEqual(t.velocity(.1,5,5,0,3,1),0)
         self.assertEqual(t.velocity(100,100,5,0,3,.02),.06)
         self.assertEqual(t.velocity(100,100,5,5,3,.02),5)
+
+    def test_long_moves_brake_before_target(self):
+        # Quantized pulse speeds, both signs, all axes, high gains and jitter.
+        for _,ratio,cap,_ in t.AXES.values():
+            spd=3200*ratio/360
+            for target in (-90,-30,30,90):
+                for kp in (.8,1.5,5):
+                    angle=previous=0.;peak=0.;settled=0
+                    for tick in range(15000):
+                        dt=(.02,.025,.015)[tick%3]
+                        error=target-angle
+                        velocity=t.velocity(error,kp,cap,previous,2,dt)
+                        self.assertLessEqual(abs(velocity-previous),2*dt+1e-9)
+                        self.assertLessEqual(abs(velocity),cap+1e-9)
+                        previous=velocity
+                        hz=max(-math.floor(cap*spd),min(math.floor(cap*spd),round(velocity*spd)))
+                        angle+=hz/spd*dt
+                        peak=max(peak,(angle-target)*(1 if target>0 else -1))
+                        settled=settled+1 if abs(target-angle)<=t.TOL and hz==0 else 0
+                        if settled>=20:break
+                    else:self.fail(f'Failed to settle target={target}, kp={kp}, cap={cap}')
+                    self.assertLess(peak,.5,(target,kp,cap,peak))
+
+    def test_braking_requests_lower_speed_near_goal(self):
+        # At 10 deg/s and 2 deg/s², stopping requires 25deg. P alone
+        # would still demand 10deg/s at 20deg remaining with Kp=1.
+        self.assertLess(t.velocity(20,1,10,10,2,.02),10)
+        self.assertGreater(t.velocity(-20,1,10,-10,2,.02),-10)
     def test_wrap(self):
         with patch.object(t,'read',side_effect=[(4095,0,0),(0,0,0),(4095,0,0)]),patch.object(t.time,'monotonic',return_value=1):
             pos=t.Position(None)

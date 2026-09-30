@@ -40,8 +40,14 @@ At the prompt:
 - Enter during motion: stop and return to prompt. Ctrl+C: stop and exit.
 
 Gains/speed are session-only; use `--kp 1.2 --speed 2` to supply launch values.
-This is pure position P, **not** trajectory feedforward:
-`velocity = Kp * (target - measured angle)`, then speed and acceleration limits.
+This is position P, **not** trajectory feedforward or PD:
+`velocity = Kp * (target - measured angle)`, then a distance-aware braking
+ceiling and speed/acceleration limits. The braking ceiling solves
+`v * reaction_time + v² / (2 * braking_accel) <= remaining_distance`.
+It reserves 20% deceleration margin, allows at least 40ms reaction time, and
+aims halfway into the target tolerance band. Long moves therefore begin slowing
+before P alone would request it. This is a command-model limit, not a guarantee
+against gravity, slipping, stalls, backlash or bad encoder calibration.
 Default acceleration 2°/s²; `--accel` allows up to 3. Motor pulses use a 20kHz
 timer. Host controller nominally 50Hz. Display reports angle, target, error,
 commanded velocity and Kp. Within ±0.35°, requested velocity becomes zero;
