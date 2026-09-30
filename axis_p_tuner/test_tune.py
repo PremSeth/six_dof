@@ -22,12 +22,12 @@ class Tests(unittest.TestCase):
         self.assertEqual(t.velocity(100,100,5,0,3,.02),.06)
         self.assertEqual(t.velocity(100,100,5,5,3,.02),5)
 
-    def test_long_moves_brake_before_target(self):
+    def test_long_moves_at_acceleration_fifty(self):
         # Quantized pulse speeds, both signs, all axes, high gains and jitter.
         for _,ratio,cap,_ in t.AXES.values():
             spd=3200*ratio/360
             for target in (-90,-30,30,90):
-                for kp,accel in itertools.product((.8,1.5,5),(2,5,10)):
+                for kp,accel in itertools.product((.8,1.5,5),(50,)):
                     angle=previous=0.;peak=0.;settled=0
                     for tick in range(15000):
                         dt=(.02,.025,.015)[tick%3]
@@ -44,11 +44,13 @@ class Tests(unittest.TestCase):
                     else:self.fail(f'Failed to settle target={target}, kp={kp}, cap={cap}')
                     self.assertLess(peak,.5,(target,kp,cap,peak))
 
-    def test_braking_requests_lower_speed_near_goal(self):
-        # At 10 deg/s and 2 deg/s², stopping requires 25deg. P alone
-        # would still demand 10deg/s at 20deg remaining with Kp=1.
-        self.assertLess(t.velocity(20,1,10,10,2,.02),10)
-        self.assertGreater(t.velocity(-20,1,10,-10,2,.02),-10)
+    def test_no_distance_braking_and_slew_limit_retained(self):
+        self.assertEqual(t.velocity(20,1,10,10,2,.02),10)
+        self.assertEqual(t.velocity(-20,1,10,-10,2,.02),-10)
+        for accel in (2,10,50):
+            self.assertAlmostEqual(t.velocity(30,1,10,0,accel,.02),accel*.02)
+            self.assertAlmostEqual(t.velocity(-30,1,10,0,accel,.02),-accel*.02)
+            self.assertAlmostEqual(t.velocity(0,1,10,10,accel,.02),10-accel*.02)
     def test_wrap(self):
         with patch.object(t,'read',side_effect=[(4095,0,0),(0,0,0),(4095,0,0)]),patch.object(t.time,'monotonic',return_value=1):
             pos=t.Position(None)
@@ -111,12 +113,12 @@ class Tests(unittest.TestCase):
         def exchange(link,cmd):
             sent.append(cmd)
             return {'PING':t.READY,'SELECT 2':'OK SELECT 2','STOP':'OK STOP'}[cmd]
-        with patch.object(t.sys,'argv',['tune.py','j2','--accel','10']),patch.object(t.glob,'glob',return_value=['fake']),patch.object(t.serial,'Serial',return_value=Link()),patch.object(t,'Position',Position),patch.object(t,'exchange',side_effect=exchange),redirect_stdout(io.StringIO()):
+        with patch.object(t.sys,'argv',['tune.py','j2','--accel','50']),patch.object(t.glob,'glob',return_value=['fake']),patch.object(t.serial,'Serial',return_value=Link()),patch.object(t,'Position',Position),patch.object(t,'exchange',side_effect=exchange),redirect_stdout(io.StringIO()):
             t.main()
         self.assertEqual(sent,['PING','SELECT 2','STOP'])
 
-    def test_acceleration_above_ten_rejected_before_serial(self):
-        with patch.object(t.sys,'argv',['tune.py','j2','--accel','10.1']),patch.object(t.serial,'Serial') as serial,patch.object(t.sys,'stderr',io.StringIO()),self.assertRaises(SystemExit) as error:
+    def test_acceleration_above_fifty_rejected_before_serial(self):
+        with patch.object(t.sys,'argv',['tune.py','j2','--accel','50.1']),patch.object(t.serial,'Serial') as serial,patch.object(t.sys,'stderr',io.StringIO()),self.assertRaises(SystemExit) as error:
             t.main()
         self.assertEqual(error.exception.code,2)
         serial.assert_not_called()

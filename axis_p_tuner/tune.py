@@ -84,14 +84,7 @@ def keyboard_stop():
         sys.stdin.readline();raise MotionStopped('Keyboard stop')
 
 def velocity(error,kp,cap,previous,accel,dt):
-    # Begin braking before P alone would slow down. Reserve 20% deceleration
-    # and at least two nominal control periods for sampling/serial latency.
-    # Aim inside the tolerance band, not at its edge (avoids rounding stalls).
-    distance=max(0.,abs(error)-TOL/2)
-    braking_accel=.8*accel
-    reaction=max(.04,dt)
-    braking_speed=math.sqrt((braking_accel*reaction)**2+2*braking_accel*distance)-braking_accel*reaction
-    requested=0 if abs(error)<=TOL else math.copysign(min(cap,kp*abs(error),braking_speed),error)
+    requested=0 if abs(error)<=TOL else max(-cap,min(cap,kp*error))
     return max(previous-accel*dt,min(previous+accel*dt,requested))
 
 def move(link,pos,target,kp,cap,accel,spd,interrupt=keyboard_stop):
@@ -128,13 +121,13 @@ def main():
     parser.add_argument('axis',choices=AXES)
     parser.add_argument('--kp',type=float,default=1.)
     parser.add_argument('--speed',type=float,default=2.)
-    parser.add_argument('--accel',type=float,default=2.,help='Acceleration/deceleration in deg/s² (default 2, maximum 10)')
+    parser.add_argument('--accel',type=float,default=2.,help='Acceleration/deceleration in deg/s² (default 2, maximum 50)')
     parser.add_argument('--check',action='store_true')
     args=parser.parse_args();index,ratio,maximum,port=AXES[args.axis]
     try:kp=positive(args.kp);cap=positive(args.speed);accel=positive(args.accel)
     except ValueError as e:parser.error(str(e))
     if cap>maximum:parser.error(f'{args.axis} speed ceiling is {maximum}°/s')
-    if accel>10:parser.error('Acceleration ceiling is 10°/s²')
+    if accel>50:parser.error('Acceleration ceiling is 50°/s²')
     spd=3200*ratio/360
     ports=glob.glob('/dev/serial/by-id/*Teensy*')
     if len(ports)!=1:raise RuntimeError(f'Expected one Teensy; found {ports}')
@@ -144,7 +137,7 @@ def main():
         pos=Position(link,spd)
         print(f'{args.axis}: encoder mux{port}, absolute {pos.raw*360/4096:.2f}°, ratio {ratio}:1, 3200 pulses/motor rev')
         if args.check:return
-        print('Position P with distance-aware braking and speed/acceleration limits; no D term.')
+        print('Position P with speed/acceleration limits; no distance braking or D term.')
         print('z: set zero; number: target degrees; k 1.2: gain; v 2: speed cap; w: position; q: quit')
         print('Enter during motion stops. Other axes receive NO step pulses. Support gravity-loaded links.')
         print('No automatic stall timeout or physical joint limits. Stay present; keep stop/power accessible.')
