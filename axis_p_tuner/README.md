@@ -58,7 +58,7 @@ small-angle behavior may be quantized. There is no gravity/torque compensation.
 Selected encoder reads use at most three attempts with a 100ms elapsed budget,
 1ms between failures, and mux select/readback/deselect. In-flight Wire operations
 can overrun that budget until the library timeout returns. No magnet-status
-gating and no substitute angle. Persistent failure stops and prints stage/code.
+gating. Persistent I2C failure stops and prints stage/code.
 At 5°/s, 100ms corresponds to 0.5° continued motion, not a hard travel bound.
 
 ISR watchdog stops after 300ms without a velocity command or fresh encoder.
@@ -72,6 +72,27 @@ holding current. Do not use this tuner as an unattended controller.
 
 Offline tests: `python -m unittest test_tune`. Simulated convergence is not a
 physical tuning result. Loading another project requires its firmware again.
+
+## Encoder angle outlier filter
+
+During a move, each decoded angle is compared with the last accepted angle plus
+signed emitted pulses converted using the selected gear ratio. A discrepancy
+over 0.75° rejects that sample without updating the accepted encoder baseline.
+For less than 100ms since the last accepted reading, control uses pulse-predicted
+position without a pause/restart. After that, untrusted feedback stops motion.
+Predicted motion is not proof of actual motor motion; persistent mechanical
+slip or incorrect scaling may also trigger the stop. This is an outlier gate,
+not a Kalman filter or a fix for wiring. I2C transaction failures still stop in
+firmware after its retries; the host filter handles successful-but-bogus angles.
+
+Zeroing, starting a move, and completing a move require accepted encoder data.
+Gradual real overshoot still triggers the original travel-envelope check.
+At idle the acceptance margin also allows hand-positioning at up to 180°/s.
+The console prints the first rejected raw/candidate/predicted angle per incident;
+envelope errors now print the actual offending angle, start and target.
+Gains and limits are unchanged. Restart the Python client after installing this
+update; it does not require a firmware reflash. No physical moving test of this
+filter has been performed by the assistant.
 
 Verified 2026-09-29: nine offline tests passed, firmware built/uploaded, and
 100/100 stationary reads passed for each of base, J1 and J2 with rate=0.

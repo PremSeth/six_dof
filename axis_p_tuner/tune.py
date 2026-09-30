@@ -10,6 +10,10 @@ import serial
 READY='READY AXIS_P_V1 STEP=2,23,0 DIR=3,22,1 ENC=0,1,3 POS=1,0,1 HZ=88,666,1333'
 AXES={'base':(0,2,5,0),'j1':(1,15,5,1),'j2':(2,15,10,3)}
 TOL=.35
+FILTER_GRACE=.1
+FILTER_MARGIN=.75
+
+def step_delta(a,b):return ((a-b+2**31)%2**32)-2**31
 
 def positive(value):
     value=float(value)
@@ -32,18 +36,36 @@ def read(link):
     raw,steps,hz,fault=[int(fields[k]) for k in ('raw','steps','hz','fault')]
     if fault:raise RuntimeError(f'Firmware stop fault={fault} (1=link, 2=encoder, 3=command)')
     if not 0<=raw<4096 or not 0<=steps<2**32:raise RuntimeError('Invalid encoder frame')
-    return raw,hz
+    return raw,hz,steps
 
 class Position:
-    def __init__(self,link):
-        self.link=link;self.raw,hz=read(link)
+    def __init__(self,link,spd=3200*15/360):
+        self.link=link;self.spd=spd;self.raw,hz,self.steps=read(link)
         if hz:raise RuntimeError('Motor already running')
         self.angle=0.;self.when=time.monotonic()
+        self.measured=0.;self.fresh=self.when;self.good=True;self.motion=False
+        self.rejected=0;self.last_rejection='none'
     def update(self):
-        raw,_=read(self.link);now=time.monotonic()
+        raw,_,steps=read(self.link);now=time.monotonic()
         if now-self.when>.5:raise RuntimeError('Tracking gap: restart and set zero again')
-        self.angle+=((raw-self.raw+2048)%4096-2048)*360/4096
-        self.raw=raw;self.when=now
+        self.when=now
+        measured=self.measured+((raw-self.raw+2048)%4096-2048)*360/4096
+        predicted=self.measured+step_delta(steps,self.steps)/self.spd
+        # During motion compare with pulses since the LAST ACCEPTED reading.
+        # Idle allows hand-positioning up to 180 deg/s plus quantization margin.
+        margin=FILTER_MARGIN if self.motion else FILTER_MARGIN+180*(now-self.fresh)
+        if not self.good and now-self.fresh>=FILTER_GRACE:
+            raise RuntimeError('Encoder filter: no accepted feedback for 100ms; '+self.last_rejection)
+        if abs(measured-predicted)<=margin:
+            self.angle=self.measured=measured;self.raw=raw;self.steps=steps
+            self.fresh=now;self.good=True
+        else:
+            self.last_rejection=f'raw={raw} candidate={measured:+.3f}° predicted={predicted:+.3f}° difference={measured-predicted:+.3f}°'
+            if self.good:print('\nRejected encoder jump: '+self.last_rejection,flush=True)
+            self.good=False;self.rejected+=1
+            if now-self.fresh>=FILTER_GRACE:
+                raise RuntimeError('Encoder filter: no accepted feedback for 100ms; '+self.last_rejection)
+            self.angle=predicted
         return self.angle
     def prompt(self,text):
         print(text,end='',flush=True)
@@ -51,7 +73,10 @@ class Position:
         line=sys.stdin.readline()
         if not line:raise EOFError
         self.update();return line.strip().lower()
-    def zero(self):self.update();self.angle=0.
+    def zero(self):
+        self.update()
+        if not self.good:raise ValueError('Wait for a valid encoder reading before setting zero')
+        self.angle=self.measured=0.
 
 class MotionStopped(Exception):pass
 def keyboard_stop():
@@ -65,18 +90,20 @@ def velocity(error,kp,cap,previous,accel,dt):
 def move(link,pos,target,kp,cap,accel,spd,interrupt=keyboard_stop):
     if not math.isfinite(target):raise ValueError('Target must be finite')
     start=pos.update();last=time.monotonic();previous=0.;settled=None;display=0
+    if not getattr(pos,'good',True):raise ValueError('Fresh encoder reading required before moving')
     try:
+        pos.motion=True
         while True:
             interrupt()
             angle=pos.update();now=time.monotonic();dt=now-last;last=now
             if dt>.25:raise RuntimeError('Control loop gap; stopped')
             if not min(start,target)-2<=angle<=max(start,target)+2:
-                raise RuntimeError('Outside target travel envelope: check direction/load')
+                raise RuntimeError(f'Outside target travel envelope: angle={angle:+.3f}° start={start:+.3f}° target={target:+.3f}° feedback={"encoder" if getattr(pos,"good",True) else "pulse prediction"}')
             error=target-angle
             previous=velocity(error,kp,cap,previous,accel,dt)
             hz=max(-math.floor(cap*spd),min(math.floor(cap*spd),round(previous*spd)))
             if exchange(link,f'VEL {hz}')!='OK VEL':raise RuntimeError('Velocity update failed')
-            if abs(error)<=TOL and hz==0:
+            if abs(error)<=TOL and hz==0 and getattr(pos,'good',True):
                 if settled is None:settled=now
                 if now-settled>=.25:break
             else:settled=None
@@ -85,6 +112,7 @@ def move(link,pos,target,kp,cap,accel,spd,interrupt=keyboard_stop):
                 display=now
             time.sleep(max(0,.02-(time.monotonic()-now)))
     finally:
+        pos.motion=False
         stop(link);print()
     print(f'Reached {angle:+.2f}°. Pulses stopped; holding current remains.')
 
@@ -106,7 +134,7 @@ def main():
     with serial.Serial(ports[0],115200,timeout=.4,write_timeout=.4,exclusive=True) as link:
         if exchange(link,'PING')!=READY:raise RuntimeError('Upload axis_p_tuner firmware first')
         if exchange(link,f'SELECT {index}')!=f'OK SELECT {index}':raise RuntimeError('Axis selection failed')
-        pos=Position(link)
+        pos=Position(link,spd)
         print(f'{args.axis}: encoder mux{port}, absolute {pos.raw*360/4096:.2f}°, ratio {ratio}:1, 3200 pulses/motor rev')
         if args.check:return
         print('Pure position P: velocity = Kp × position error, with speed/acceleration limits.')

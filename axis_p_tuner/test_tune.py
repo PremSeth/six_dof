@@ -21,7 +21,7 @@ class Tests(unittest.TestCase):
         self.assertEqual(t.velocity(100,100,5,0,3,.02),.06)
         self.assertEqual(t.velocity(100,100,5,5,3,.02),5)
     def test_wrap(self):
-        with patch.object(t,'read',side_effect=[(4095,0),(0,0),(4095,0)]),patch.object(t.time,'monotonic',return_value=1):
+        with patch.object(t,'read',side_effect=[(4095,0,0),(0,0,0),(4095,0,0)]),patch.object(t.time,'monotonic',return_value=1):
             pos=t.Position(None)
             self.assertAlmostEqual(pos.update(),360/4096)
             self.assertAlmostEqual(pos.update(),0)
@@ -74,7 +74,7 @@ class Tests(unittest.TestCase):
             def __exit__(self,*args):pass
         class Position:
             raw=1000;angle=0
-            def __init__(self,link):pass
+            def __init__(self,link,spd):pass
             def prompt(self,text):return next(commands)
             def zero(self):pass
         commands=iter(['5','k 0.8','v 1','z','q'])
@@ -85,5 +85,63 @@ class Tests(unittest.TestCase):
         with patch.object(t.sys,'argv',['tune.py','j2']),patch.object(t.glob,'glob',return_value=['fake']),patch.object(t.serial,'Serial',return_value=Link()),patch.object(t,'Position',Position),patch.object(t,'exchange',side_effect=exchange),redirect_stdout(io.StringIO()):
             t.main()
         self.assertEqual(sent,['PING','SELECT 2','STOP'])
+
+    def test_single_zero_glitch_rejected_then_recovers(self):
+        samples=[(1000,0,0),(999,-100,2**32-12),(0,-100,2**32-24),(998,-100,2**32-24)]
+        with patch.object(t,'read',side_effect=samples),patch.object(t.time,'monotonic',side_effect=[0,.02,.04,.06]),redirect_stdout(io.StringIO()):
+            p=t.Position(None);p.motion=True
+            self.assertAlmostEqual(p.update(),-360/4096)
+            estimated=p.update()
+            self.assertFalse(p.good);self.assertEqual(p.raw,999)
+            self.assertLess(abs(estimated),.3)
+            self.assertAlmostEqual(p.update(),-2*360/4096)
+            self.assertTrue(p.good);self.assertEqual(p.rejected,1)
+
+    def test_persistent_bad_angles_stop(self):
+        with patch.object(t,'read',side_effect=[(1000,0,0),(0,0,0),(0,0,0)]),patch.object(t.time,'monotonic',side_effect=[0,.02,.12]),redirect_stdout(io.StringIO()):
+            p=t.Position(None);p.motion=True;p.update()
+            with self.assertRaisesRegex(RuntimeError,'100ms'):p.update()
+
+    def test_zero_and_target_start_require_real_feedback(self):
+        with patch.object(t,'read',side_effect=[(1000,0,0),(0,0,0)]),patch.object(t.time,'monotonic',side_effect=[0,.001]),redirect_stdout(io.StringIO()):
+            p=t.Position(None)
+            with self.assertRaises(ValueError):p.zero()
+        class BadPosition:
+            good=False
+            def update(self):return 0
+        with patch.object(t,'exchange') as exchange,self.assertRaises(ValueError):
+            t.move(None,BadPosition(),1,1,2,2,100)
+        exchange.assert_not_called()
+
+    def test_real_gradual_overshoot_is_not_filtered_out(self):
+        samples=[(1000-i,0,0) for i in range(31)]
+        with patch.object(t,'read',side_effect=samples),patch.object(t.time,'monotonic',side_effect=[i*.02 for i in range(31)]):
+            p=t.Position(None);p.motion=True
+            for _ in range(30):p.update();self.assertTrue(p.good)
+            self.assertLess(p.angle,-2)
+        self.assertEqual(t.step_delta(0,2**32-1),1)
+        self.assertEqual(t.step_delta(2**32-1,0),-1)
+
+    def test_move_survives_injected_zero_angle(self):
+        clock=[0.];last=[0.];angle=[0.];rate=[0];injected=[False];commands=[]
+        spd=3200*15/360
+        def sensor(link):
+            dt=clock[0]-last[0];last[0]=clock[0]
+            angle[0]+=rate[0]/spd*dt
+            raw=(1000+round(angle[0]*4096/360))%4096
+            if clock[0]>.8 and not injected[0]:raw=0;injected[0]=True
+            return raw,rate[0],round(angle[0]*spd)%2**32
+        def exchange(link,cmd):
+            commands.append(cmd)
+            if cmd=='STOP':rate[0]=0;return 'OK STOP'
+            rate[0]=int(cmd.split()[1]);return 'OK VEL'
+        def interrupt():
+            if clock[0]>30:raise RuntimeError('Did not converge')
+        with patch.object(t,'read',side_effect=sensor),patch.object(t,'exchange',side_effect=exchange),patch.object(t.time,'monotonic',side_effect=lambda:clock[0]),patch.object(t.time,'sleep',side_effect=lambda dt:clock.__setitem__(0,clock[0]+max(dt,.001))),redirect_stdout(io.StringIO()):
+            pos=t.Position(None,spd)
+            t.move(None,pos,-3,1,2,2,spd,interrupt)
+        self.assertTrue(injected[0]);self.assertEqual(pos.rejected,1)
+        self.assertTrue(pos.good);self.assertLessEqual(abs(angle[0]+3),t.TOL+.1)
+        self.assertEqual(commands[-1],'STOP')
 
 if __name__=='__main__':unittest.main()
