@@ -1,5 +1,10 @@
 # six_dof
 
+For **individual base/J1/J2 P tuning**, use
+[axis_p_tuner/README.md](axis_p_tuner/README.md). Select one axis, set zero,
+adjust Kp and speed, and enter targets. Wrist and sixth-axis tuning are excluded.
+This has its own firmware; upload the appropriate project before switching tools.
+
 ## Current project: Pi 5 + Teensy 4.0
 
 Experimental five-axis encoder-feedback arm control. **Not safety-rated.

@@ -1,0 +1,89 @@
+"""Offline tests. No serial device is opened or physical motor moved."""
+import io
+import math
+import unittest
+from contextlib import redirect_stdout
+from unittest.mock import patch
+import tune as t
+
+class Tests(unittest.TestCase):
+    def test_mapping(self):
+        self.assertEqual(t.AXES,{'base':(0,2,5,0),'j1':(1,15,5,1),'j2':(2,15,10,3)})
+    def test_positive_parameters(self):
+        self.assertEqual(t.positive('1.2'),1.2)
+        for value in ('nan','inf','0','-1','bad'):
+            with self.assertRaises(ValueError):t.positive(value)
+    def test_p_gain_sign_deadband_caps_and_acceleration(self):
+        self.assertEqual(t.velocity(2,1,5,0,3,1),2)
+        self.assertEqual(t.velocity(-2,1,5,0,3,1),-2)
+        self.assertEqual(t.velocity(2,.5,5,0,3,1),1)
+        self.assertEqual(t.velocity(.1,5,5,0,3,1),0)
+        self.assertEqual(t.velocity(100,100,5,0,3,.02),.06)
+        self.assertEqual(t.velocity(100,100,5,5,3,.02),5)
+    def test_wrap(self):
+        with patch.object(t,'read',side_effect=[(4095,0),(0,0),(4095,0)]),patch.object(t.time,'monotonic',return_value=1):
+            pos=t.Position(None)
+            self.assertAlmostEqual(pos.update(),360/4096)
+            self.assertAlmostEqual(pos.update(),0)
+    def test_firmware_fault_and_bad_frame(self):
+        for reply in ('FRAME raw=1 steps=0 hz=0 fault=2','FRAME raw=4096 steps=0 hz=0 fault=0','wrong'):
+            with patch.object(t,'exchange',return_value=reply),self.assertRaises(RuntimeError):t.read(None)
+    def test_error_and_keyboard_stop(self):
+        class Position:
+            def update(self):return 0
+        for error in (t.MotionStopped('stop'),KeyboardInterrupt(),RuntimeError('bus')):
+            def interrupt():raise error
+            with patch.object(t,'stop') as stop,redirect_stdout(io.StringIO()),self.assertRaises(type(error)):
+                t.move(None,Position(),3,1,2,2,3200*15/360,interrupt)
+            stop.assert_called_once_with(None)
+    def test_read_error_stops(self):
+        class Position:
+            calls=0
+            def update(self):
+                self.calls+=1
+                if self.calls>1:raise RuntimeError('encoder failure')
+                return 0
+        with patch.object(t,'stop') as stop,redirect_stdout(io.StringIO()),self.assertRaises(RuntimeError):
+            t.move(None,Position(),3,1,2,2,3200*15/360,lambda:None)
+        stop.assert_called_once_with(None)
+    def test_all_axes_converge_both_directions(self):
+        for _,ratio,cap,_ in t.AXES.values():
+            for target in (-3,3):
+                for kp in (.5,1.2,2):
+                    clock=[0.];last=[0.];angle=[0.];rate=[0];commands=[];spd=3200*ratio/360
+                    class Position:
+                        def update(self):
+                            dt=clock[0]-last[0];last[0]=clock[0]
+                            angle[0]+=rate[0]/spd*dt
+                            return angle[0]
+                    def exchange(link,cmd):
+                        commands.append(cmd)
+                        if cmd=='STOP':rate[0]=0;return 'OK STOP'
+                        self.assertTrue(cmd.startswith('VEL '))
+                        rate[0]=int(cmd.split()[1]);self.assertLessEqual(abs(rate[0]),math.floor(cap*spd))
+                        return 'OK VEL'
+                    def interrupt():
+                        if clock[0]>60:raise RuntimeError('Simulation failed to converge')
+                    with patch.object(t,'exchange',side_effect=exchange),patch.object(t.time,'monotonic',side_effect=lambda:clock[0]),patch.object(t.time,'sleep',side_effect=lambda dt:clock.__setitem__(0,clock[0]+max(.001,dt))),redirect_stdout(io.StringIO()):
+                        t.move(None,Position(),target,kp,cap,2,spd,interrupt)
+                    self.assertLessEqual(abs(target-angle[0]),t.TOL)
+                    self.assertEqual(commands[-1],'STOP')
+    def test_zero_gate_and_gain_changes_issue_no_velocity(self):
+        class Link:
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+        class Position:
+            raw=1000;angle=0
+            def __init__(self,link):pass
+            def prompt(self,text):return next(commands)
+            def zero(self):pass
+        commands=iter(['5','k 0.8','v 1','z','q'])
+        sent=[]
+        def exchange(link,cmd):
+            sent.append(cmd)
+            return {'PING':t.READY,'SELECT 2':'OK SELECT 2','STOP':'OK STOP'}[cmd]
+        with patch.object(t.sys,'argv',['tune.py','j2']),patch.object(t.glob,'glob',return_value=['fake']),patch.object(t.serial,'Serial',return_value=Link()),patch.object(t,'Position',Position),patch.object(t,'exchange',side_effect=exchange),redirect_stdout(io.StringIO()):
+            t.main()
+        self.assertEqual(sent,['PING','SELECT 2','STOP'])
+
+if __name__=='__main__':unittest.main()

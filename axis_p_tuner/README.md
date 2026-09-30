@@ -1,0 +1,79 @@
+# Single-axis P tuner: base, J1, J2 only
+
+One selected motor receives pulses; the other two STEP outputs remain LOW.
+Firmware never configures wrist/servo pins. Holding current is controlled by
+the drivers, not this program. Support gravity-loaded links before altering power.
+
+| Axis | STEP | DIR | Encoder mux | Ratio | Positive DIR | Max speed |
+|---|---:|---:|---:|---:|---:|---:|
+| base | 2 | 3 | 0 | 2:1 | 1 | 5°/s |
+| j1 | 23 | 22 | 1 | 15:1 | 0 | 5°/s |
+| j2 | 0 | 1 | 3 | 15:1 | 1 | 10°/s |
+
+All drivers: 3200 pulses/motor revolution. Teensy pin numbering. J1 uses
+the existing common-anode NPN circuit; base/J2 use existing direct inputs.
+Only the selected encoder needs to be connected. No wrist or sixth-axis tuning.
+
+## Install and run on the Pi
+
+Exit all other motor scripts. Upload replaces the previously installed firmware:
+
+```bash
+cd ~/six_dof/axis_p_tuner
+~/.local/bin/micromamba run -n six_dof pio run --target upload
+~/.local/share/mamba/envs/six_dof/bin/python tune.py j2 --check
+~/.local/share/mamba/envs/six_dof/bin/python tune.py j2
+```
+
+Replace `j2` with `j1` or `base`; the same firmware supports all three.
+Quit before switching axes. `--check` selects the axis and reads its encoder,
+but sends no velocity/pulse commands. A running axis cannot be reselected.
+
+At the prompt:
+
+- `z`: make the current position zero (required before moving).
+- `k 1.2`: set Kp; default 1.0, units 1/s.
+- `v 2`: set the speed ceiling in output degrees/s; default 2.
+- `5`: target +5° relative to your zero. Enter at the confirmation to move.
+- `0`: return to zero, with confirmation.
+- `w`: show position; `q`: quit.
+- Enter during motion: stop and return to prompt. Ctrl+C: stop and exit.
+
+Gains/speed are session-only; use `--kp 1.2 --speed 2` to supply launch values.
+This is pure position P, **not** trajectory feedforward:
+`velocity = Kp * (target - measured angle)`, then speed and acceleration limits.
+Default acceleration 2°/s²; `--accel` allows up to 3. Motor pulses use a 20kHz
+timer. Host controller nominally 50Hz. Display reports angle, target, error,
+commanded velocity and Kp. Within ±0.35°, requested velocity becomes zero;
+after settling 0.25s, pulses stop (this is not continuous active position hold).
+
+Start with a small clear-path move. Change one gain at a time; test positive and
+negative moves. Larger Kp corrects faster but may overshoot or oscillate. Reduce
+it if oscillatory. Saturated speed/acceleration can hide changes in Kp. Gains are
+not physically tuned automatically. Base gear ratio and encoder resolution mean
+small-angle behavior may be quantized. There is no gravity/torque compensation.
+
+## Failure handling
+
+Selected encoder reads use at most three attempts with a 100ms elapsed budget,
+1ms between failures, and mux select/readback/deselect. In-flight Wire operations
+can overrun that budget until the library timeout returns. No magnet-status
+gating and no substitute angle. Persistent failure stops and prints stage/code.
+At 5°/s, 100ms corresponds to 0.5° continued motion, not a hard travel bound.
+
+ISR watchdog stops after 300ms without a velocity command or fresh encoder.
+Host stops on a >250ms control-loop gap, lost feedback, or measured position
+outside the start/target interval by >2°. Faults require STOP; no auto-resume.
+These are not collision avoidance or calibrated joint limits. A stalled motor
+with readable but frozen feedback can keep receiving pulses: **no automatic
+stall or move-duration timeout**. Stay present, keep the path clear, and have
+independent motor-power isolation accessible. No pulse command changes motor
+holding current. Do not use this tuner as an unattended controller.
+
+Offline tests: `python -m unittest test_tune`. Simulated convergence is not a
+physical tuning result. Loading another project requires its firmware again.
+
+Verified 2026-09-29: nine offline tests passed, firmware built/uploaded, and
+100/100 stationary reads passed for each of base, J1 and J2 with rate=0.
+No physical motor movement was commanded during installation. Gains still
+require attended physical tuning.
