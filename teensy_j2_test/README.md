@@ -12,11 +12,14 @@ Enter sets current positionzero; targets are relative to that sessionzero.
 `z` rezeros, `q` exits, Ctrl+C stops pulses (not holdingcurrent). Start2deg at2deg/s.
 `--check` only checks firmware, idle status and encoder. No magnet-status gating.
 Firmware retries a failed encoder transaction up to three total attempts,
-with 1 ms between attempts and a 20 ms elapsed-time budget. Each attempt
+with 1 ms between attempts and a 100 ms elapsed-time budget. Each attempt
 reselects, checks, reads, and deselects mux port 3. A valid read is required;
 no predicted or cached angle is substituted. Pulses continue during brief
 retries; persistent failure stops pulses and reports `encoder_read_failed`.
 An in-flight I2C operation may exceed the budget until Wire's timeout returns.
+At 5 degrees/s, 100 ms of continued motion is 0.5 degrees; this is not a hard
+travel bound because an in-flight transaction can overrun the budget.
+Errors include the attempt count, elapsed time, and last failed I2C stage/code.
 No acceleration ramp, calibrated travel limits, pulsebudget or frozen-encoder
 timeout. ContinuousRUN stops at encoder target or on read/wrongdirection error;
 1.5sec command-watchdog remains. Support arm and keep path clear.

@@ -108,28 +108,44 @@ void command() {
     Wire.begin();
     Wire.setClock(100000);
     uint16_t raw = 0;
+    const uint32_t readStarted = millis();
+    unsigned attempts = 0;
+    const char* failedStage = "none";
+    int failedCode = 0;
     const bool recovered = retryEncoder([&]() {
-    Wire.beginTransmission(0x70);
-    Wire.write((uint8_t)(1u << ENCODER_PORT));
-    bool ok = Wire.endTransmission() == 0;
-    if (ok) delayMicroseconds(100);
-    if (ok) {
-      ok = Wire.requestFrom((uint8_t)0x70, (uint8_t)1) == 1;
-      if (ok) ok = Wire.read() == (1u << ENCODER_PORT);
-    }
-    if (ok) {
-      Wire.beginTransmission(0x36);
-      Wire.write((uint8_t)0x0C); // RAW_ANGLE; no magnet-status gating.
-      ok = Wire.endTransmission(false) == 0;
-      if (ok) ok = Wire.requestFrom((uint8_t)0x36, (uint8_t)2) == 2;
-    }
-    if (ok) { raw = (Wire.read() & 15) << 8; raw |= Wire.read(); }
-    Wire.beginTransmission(0x70);
-    Wire.write((uint8_t)0);
-    ok = (Wire.endTransmission() == 0) && ok;
-    return ok;
+      ++attempts;
+      auto check = [&](const char* stage, int actual, int expected) {
+        if (actual == expected) return true;
+        failedStage = stage;
+        failedCode = actual;
+        return false;
+      };
+      Wire.beginTransmission(0x70);
+      Wire.write((uint8_t)(1u << ENCODER_PORT));
+      bool ok = check("mux_select", Wire.endTransmission(), 0);
+      if (ok) delayMicroseconds(100);
+      if (ok) {
+        ok = check("mux_read_bytes", Wire.requestFrom((uint8_t)0x70, (uint8_t)1), 1);
+        if (ok) ok = check("mux_mask", Wire.read(), 1u << ENCODER_PORT);
+      }
+      if (ok) {
+        Wire.beginTransmission(0x36);
+        Wire.write((uint8_t)0x0C); // RAW_ANGLE; no magnet-status gating.
+        ok = check("encoder_register", Wire.endTransmission(false), 0);
+        if (ok) ok = check("encoder_bytes", Wire.requestFrom((uint8_t)0x36, (uint8_t)2), 2);
+      }
+      if (ok) { raw = (Wire.read() & 15) << 8; raw |= Wire.read(); }
+      Wire.beginTransmission(0x70);
+      Wire.write((uint8_t)0);
+      const int deselect = Wire.endTransmission();
+      if (ok) ok = check("mux_deselect", deselect, 0);
+      return ok;
     }, []() { return millis(); }, []() { delay(1); });
-    if (!recovered) { stop(3); Serial.println("ERROR encoder_read_failed"); }
+    if (!recovered) {
+      stop(3);
+      Serial.printf("ERROR encoder_read_failed port=%u attempts=%u elapsed_ms=%lu last_failed_stage=%s code=%d\n",
+        ENCODER_PORT, attempts, (unsigned long)(millis() - readStarted), failedStage, failedCode);
+    }
     else Serial.printf("ANGLE_J2 port=%u raw=%u\n", ENCODER_PORT, raw);
   } else if (!strcmp(line, "I2C_SCAN") || !strcmp(line, "I2C_SCAN0")) {
     const uint8_t channelCount = !strcmp(line, "I2C_SCAN0") ? 1 : 8;

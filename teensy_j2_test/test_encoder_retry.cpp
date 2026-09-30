@@ -16,9 +16,17 @@ int main() {
   for (bool reply : {false, true}) {
     uint32_t ms = 0;
     unsigned calls = 0;
-    assert(!retryEncoder([&]() { ++calls; ms += 21; return reply; },
+    assert(!retryEncoder([&]() { ++calls; ms += 101; return reply; },
       [&]() { return ms; }, [&]() { ++ms; }));
     assert(calls == 1);
+  }
+  // A normal Wire timeout must leave time for a successful second attempt.
+  {
+    uint32_t ms = 0;
+    unsigned calls = 0;
+    assert(retryEncoder([&]() { ++calls; ms += calls == 1 ? 51 : 2; return calls == 2; },
+      [&]() { return ms; }, [&]() { ++ms; }));
+    assert(calls == 2);
   }
   // Unsigned elapsed-time arithmetic survives millis() rollover.
   uint32_t ms = UINT32_MAX;
