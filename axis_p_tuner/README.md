@@ -8,7 +8,7 @@ the drivers, not this program. Support gravity-loaded links before altering powe
 |---|---:|---:|---:|---:|---:|---:|
 | base | 2 | 3 | 0 | 2:1 | 1 | 5°/s |
 | j1 | 23 | 22 | 1 | 15:1 | 0 | 5°/s |
-| j2 | 0 | 1 | 3 | 15:1 | 1 | 10°/s |
+| j2 | 0 | 1 | 3 | 15:1 | 1 | 15°/s |
 
 All drivers: 3200 pulses/motor revolution. Teensy pin numbering. J1 uses
 the existing common-anode NPN circuit; base/J2 use existing direct inputs.
@@ -50,6 +50,8 @@ slipping, stalls, backlash or bad encoder calibration.
 Default acceleration 2°/s²; `--accel` allows up to 50. This also sets the
 deceleration limit; increase gradually and check for stalls or overshoot.
 For example: `python tune.py j2 --kp 1 --speed 5 --accel 50`.
+J2 allows `--speed 15` (2000 pulses/s); base and J1 remain capped at 5°/s.
+The updated client requires matching firmware with `HZ=88,666,2000`.
 Motor pulses use a 20kHz
 timer. Host controller nominally 50Hz. Display reports angle, target, error,
 commanded velocity and Kp. Within ±0.35°, requested velocity becomes zero;

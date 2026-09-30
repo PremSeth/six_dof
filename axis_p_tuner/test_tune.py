@@ -9,7 +9,8 @@ import tune as t
 
 class Tests(unittest.TestCase):
     def test_mapping(self):
-        self.assertEqual(t.AXES,{'base':(0,2,5,0),'j1':(1,15,5,1),'j2':(2,15,10,3)})
+        self.assertEqual(t.AXES,{'base':(0,2,5,0),'j1':(1,15,5,1),'j2':(2,15,15,3)})
+        self.assertTrue(t.READY.endswith('HZ=88,666,2000'))
     def test_positive_parameters(self):
         self.assertEqual(t.positive('1.2'),1.2)
         for value in ('nan','inf','0','-1','bad'):
@@ -113,7 +114,7 @@ class Tests(unittest.TestCase):
         def exchange(link,cmd):
             sent.append(cmd)
             return {'PING':t.READY,'SELECT 2':'OK SELECT 2','STOP':'OK STOP'}[cmd]
-        with patch.object(t.sys,'argv',['tune.py','j2','--accel','50']),patch.object(t.glob,'glob',return_value=['fake']),patch.object(t.serial,'Serial',return_value=Link()),patch.object(t,'Position',Position),patch.object(t,'exchange',side_effect=exchange),redirect_stdout(io.StringIO()):
+        with patch.object(t.sys,'argv',['tune.py','j2','--accel','50','--speed','15']),patch.object(t.glob,'glob',return_value=['fake']),patch.object(t.serial,'Serial',return_value=Link()),patch.object(t,'Position',Position),patch.object(t,'exchange',side_effect=exchange),redirect_stdout(io.StringIO()):
             t.main()
         self.assertEqual(sent,['PING','SELECT 2','STOP'])
 
@@ -122,6 +123,13 @@ class Tests(unittest.TestCase):
             t.main()
         self.assertEqual(error.exception.code,2)
         serial.assert_not_called()
+
+    def test_speed_ceilings_rejected_before_serial(self):
+        for axis,speed in (('j2','15.1'),('base','5.1'),('j1','5.1')):
+            with patch.object(t.sys,'argv',['tune.py',axis,'--speed',speed]),patch.object(t.serial,'Serial') as serial,patch.object(t.sys,'stderr',io.StringIO()),self.assertRaises(SystemExit) as error:
+                t.main()
+            self.assertEqual(error.exception.code,2)
+            serial.assert_not_called()
 
     def test_single_zero_glitch_rejected_then_recovers(self):
         samples=[(1000,0,0),(999,-100,2**32-12),(0,-100,2**32-24),(998,-100,2**32-24)]

@@ -7,8 +7,8 @@ import sys
 import time
 import serial
 
-READY='READY AXIS_P_V1 STEP=2,23,0 DIR=3,22,1 ENC=0,1,3 POS=1,0,1 HZ=88,666,1333'
-AXES={'base':(0,2,5,0),'j1':(1,15,5,1),'j2':(2,15,10,3)}
+READY='READY AXIS_P_V1 STEP=2,23,0 DIR=3,22,1 ENC=0,1,3 POS=1,0,1 HZ=88,666,2000'
+AXES={'base':(0,2,5,0),'j1':(1,15,5,1),'j2':(2,15,15,3)}
 TOL=.35
 FILTER_GRACE=.1
 FILTER_MARGIN=.75
