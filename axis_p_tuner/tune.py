@@ -128,13 +128,13 @@ def main():
     parser.add_argument('axis',choices=AXES)
     parser.add_argument('--kp',type=float,default=1.)
     parser.add_argument('--speed',type=float,default=2.)
-    parser.add_argument('--accel',type=float,default=2.)
+    parser.add_argument('--accel',type=float,default=2.,help='Acceleration/deceleration in deg/s² (default 2, maximum 10)')
     parser.add_argument('--check',action='store_true')
     args=parser.parse_args();index,ratio,maximum,port=AXES[args.axis]
     try:kp=positive(args.kp);cap=positive(args.speed);accel=positive(args.accel)
     except ValueError as e:parser.error(str(e))
     if cap>maximum:parser.error(f'{args.axis} speed ceiling is {maximum}°/s')
-    if accel>3:parser.error('Acceleration ceiling is 3°/s²')
+    if accel>10:parser.error('Acceleration ceiling is 10°/s²')
     spd=3200*ratio/360
     ports=glob.glob('/dev/serial/by-id/*Teensy*')
     if len(ports)!=1:raise RuntimeError(f'Expected one Teensy; found {ports}')

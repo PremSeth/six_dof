@@ -1,5 +1,6 @@
 """Offline tests. No serial device is opened or physical motor moved."""
 import io
+import itertools
 import math
 import unittest
 from contextlib import redirect_stdout
@@ -26,13 +27,13 @@ class Tests(unittest.TestCase):
         for _,ratio,cap,_ in t.AXES.values():
             spd=3200*ratio/360
             for target in (-90,-30,30,90):
-                for kp in (.8,1.5,5):
+                for kp,accel in itertools.product((.8,1.5,5),(2,5,10)):
                     angle=previous=0.;peak=0.;settled=0
                     for tick in range(15000):
                         dt=(.02,.025,.015)[tick%3]
                         error=target-angle
-                        velocity=t.velocity(error,kp,cap,previous,2,dt)
-                        self.assertLessEqual(abs(velocity-previous),2*dt+1e-9)
+                        velocity=t.velocity(error,kp,cap,previous,accel,dt)
+                        self.assertLessEqual(abs(velocity-previous),accel*dt+1e-9)
                         self.assertLessEqual(abs(velocity),cap+1e-9)
                         previous=velocity
                         hz=max(-math.floor(cap*spd),min(math.floor(cap*spd),round(velocity*spd)))
@@ -110,9 +111,15 @@ class Tests(unittest.TestCase):
         def exchange(link,cmd):
             sent.append(cmd)
             return {'PING':t.READY,'SELECT 2':'OK SELECT 2','STOP':'OK STOP'}[cmd]
-        with patch.object(t.sys,'argv',['tune.py','j2']),patch.object(t.glob,'glob',return_value=['fake']),patch.object(t.serial,'Serial',return_value=Link()),patch.object(t,'Position',Position),patch.object(t,'exchange',side_effect=exchange),redirect_stdout(io.StringIO()):
+        with patch.object(t.sys,'argv',['tune.py','j2','--accel','10']),patch.object(t.glob,'glob',return_value=['fake']),patch.object(t.serial,'Serial',return_value=Link()),patch.object(t,'Position',Position),patch.object(t,'exchange',side_effect=exchange),redirect_stdout(io.StringIO()):
             t.main()
         self.assertEqual(sent,['PING','SELECT 2','STOP'])
+
+    def test_acceleration_above_ten_rejected_before_serial(self):
+        with patch.object(t.sys,'argv',['tune.py','j2','--accel','10.1']),patch.object(t.serial,'Serial') as serial,patch.object(t.sys,'stderr',io.StringIO()),self.assertRaises(SystemExit) as error:
+            t.main()
+        self.assertEqual(error.exception.code,2)
+        serial.assert_not_called()
 
     def test_single_zero_glitch_rejected_then_recovers(self):
         samples=[(1000,0,0),(999,-100,2**32-12),(0,-100,2**32-24),(998,-100,2**32-24)]

@@ -48,7 +48,10 @@ It reserves 20% deceleration margin, allows at least 40ms reaction time, and
 aims halfway into the target tolerance band. Long moves therefore begin slowing
 before P alone would request it. This is a command-model limit, not a guarantee
 against gravity, slipping, stalls, backlash or bad encoder calibration.
-Default acceleration 2°/s²; `--accel` allows up to 3. Motor pulses use a 20kHz
+Default acceleration 2°/s²; `--accel` allows up to 10. This also sets the
+deceleration limit; increase gradually and check for stalls or overshoot.
+For example: `python tune.py j2 --kp 1 --speed 5 --accel 10`.
+Motor pulses use a 20kHz
 timer. Host controller nominally 50Hz. Display reports angle, target, error,
 commanded velocity and Kp. Within ±0.35°, requested velocity becomes zero;
 after settling 0.25s, pulses stop (this is not continuous active position hold).
