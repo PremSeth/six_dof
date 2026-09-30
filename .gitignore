@@ -1,0 +1,33 @@
+# Local environments and generated builds
+cad_env/
+.venv/
+venv/
+**/.pio/
+**/__pycache__/
+*.py[cod]
+build/
+install/
+log/
+.pytest_cache/
+# Credentials and machine-local configuration
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+.ssh/
+# Personal notes, recordings and runtime results
+memory.md
+*.jsonl
+**/last_taught_poses.json
+**/test_results.json
+*.log
+*.before_*
+*.bak
+# All CAD/model files stay local, including simplified models and previews
+/cad_model/
+*.step
+*.stp
+*.zip
+.DS_Store
