@@ -4,6 +4,7 @@
 #include <Servo.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include "encoder_retry.h"
 
 constexpr uint8_t STEP_PIN = 0, DIR_PIN = 1;
 constexpr uint8_t ENCODER_PORT = 3;
@@ -106,9 +107,12 @@ void command() {
     lastContact = millis();
     Wire.begin();
     Wire.setClock(100000);
+    uint16_t raw = 0;
+    const bool recovered = retryEncoder([&]() {
     Wire.beginTransmission(0x70);
     Wire.write((uint8_t)(1u << ENCODER_PORT));
     bool ok = Wire.endTransmission() == 0;
+    if (ok) delayMicroseconds(100);
     if (ok) {
       ok = Wire.requestFrom((uint8_t)0x70, (uint8_t)1) == 1;
       if (ok) ok = Wire.read() == (1u << ENCODER_PORT);
@@ -119,12 +123,13 @@ void command() {
       ok = Wire.endTransmission(false) == 0;
       if (ok) ok = Wire.requestFrom((uint8_t)0x36, (uint8_t)2) == 2;
     }
-    uint16_t raw = 0;
     if (ok) { raw = (Wire.read() & 15) << 8; raw |= Wire.read(); }
     Wire.beginTransmission(0x70);
     Wire.write((uint8_t)0);
     ok = (Wire.endTransmission() == 0) && ok;
-    if (!ok) { stop(3); Serial.println("ERROR encoder_read_failed"); }
+    return ok;
+    }, []() { return millis(); }, []() { delay(1); });
+    if (!recovered) { stop(3); Serial.println("ERROR encoder_read_failed"); }
     else Serial.printf("ANGLE_J2 port=%u raw=%u\n", ENCODER_PORT, raw);
   } else if (!strcmp(line, "I2C_SCAN") || !strcmp(line, "I2C_SCAN0")) {
     const uint8_t channelCount = !strcmp(line, "I2C_SCAN0") ? 1 : 8;
