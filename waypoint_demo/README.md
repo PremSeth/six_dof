@@ -103,9 +103,19 @@ new poses. This avoids silently replaying coordinates with a changed reference.
 
 Encoder selection retries at most3 times within a100ms per-channel budget;
 in-flight Wire calls can overrun that budget until the library timeout returns.
-Host rejects angle innovation>.75° versus pulse prediction during motion;
-brief rejected readings use prediction for<100ms, then stop. This is not proof
-of actual motion. Zero/save/start/finish require real feedback. No Kalman or D.
+Host does NOT reject feedback for disagreement with pulse counts. Backlash,
+lag, sticking and reversals remain measured motion. A single encoder-to-encoder
+jump over12° triggers two immediate additional frame reads. The median actual
+angle is accepted if at least two valid readings agree within4°; a consistent
+new angle is accepted regardless of commanded pulses. This suppresses isolated
+large glitches, not persistent plausible bad data. Ordinary samples require
+no additional polling. Encoder wrap is handled before this comparison.
+Failed I2C reads or inconsistent confirmation samples briefly hold the last
+measured angle (NO pulse prediction), and stop after100ms without an accepted
+sample. Zero/save/start/finish require accepted feedback. No Kalman or D.
+This change does not remove the separate tracking/travel checks below; actual
+multi-degree backlash may still trip those checks. It does not establish a
+physically safe stopping strategy or prove every accepted reading is correct.
 Firmware stops steps on missing SET commands>300ms, stale encoder>500ms or
 invalid commands. Servo heartbeat timeout1.5s disables signals. Firmware STOP
 holds servo commands; OFF releases them. Boot leaves all step pulses and servo

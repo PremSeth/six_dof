@@ -19,6 +19,8 @@ MAX_HZ=[math.floor(v*s) for v,s in zip(SPEED,SPD)]
 READY='READY WAYPOINT_V1 STEP=2,23,0,4,6 DIR=3,22,1,5,7 ENC=0,1,3,5,4 POS=1,0,1,1,1 HZ=355,933,2000,888,888 SERVO=15,14'
 TOL=.5
 GRACE=.1
+JUMP_CONFIRM=12.  # Encoder-to-encoder jump, NOT disagreement with pulses.
+CONFIRM_SPREAD=4.
 
 def delta(a,b):return ((a-b+2048)%4096-2048)*360/4096
 def count_delta(a,b):return ((a-b+2**31)%2**32)-2**31
@@ -87,22 +89,38 @@ class Tracker:
         self.when=time.monotonic();self.fresh=[self.when]*5
         self.servos=servos;self.motion=False
     def update(self):
-        values,servos,moving=read(self.link);now=time.monotonic()
+        values,servos,moving=read(self.link)
+        frames=[values]
+        # Backlash and motor lag do not invalidate encoder feedback. Only an
+        # unusually large single-sample jump gets two immediate confirmation
+        # reads. A consistent new position is accepted, even far from prediction.
+        if any(v and abs(delta(r,self.raw[i]))>JUMP_CONFIRM for i,(v,r,s) in enumerate(values)):
+            for _ in range(2):
+                values,servos,moving=read(self.link);frames.append(values)
+        now=time.monotonic()
         if now-self.when>.5:raise RuntimeError('Tracking gap: restart and re-zero')
         self.when=now;self.servos=servos
-        for i,(valid,raw,steps) in enumerate(values):
-            measured=self.measured[i]+delta(raw,self.raw[i])
-            predicted=self.measured[i]+count_delta(steps,self.steps[i])/SPD[i]
-            margin=.75 if self.motion else .75+180*(now-self.fresh[i])
-            if not self.good[i] and now-self.fresh[i]>=GRACE:
-                raise RuntimeError(f'{NAMES[i]} no trusted encoder feedback for 100ms')
-            if valid and abs(measured-predicted)<=margin:
+        for i in range(5):
+            samples=sorted((delta(frame[i][1],self.raw[i]),frame[i][1],frame[i][2])
+                           for frame in frames if frame[i][0])
+            chosen=None
+            if len(frames)==1 and samples:chosen=samples[0]
+            elif len(samples)>=2:
+                middle=len(samples)//2
+                # Use an actual median reading, with at least one agreeing peer.
+                candidate=samples[middle]
+                if any(abs(candidate[0]-sample[0])<=CONFIRM_SPREAD for j,sample in enumerate(samples) if j!=middle):
+                    chosen=candidate
+            if chosen is not None:
+                change,raw,steps=chosen
+                measured=self.measured[i]+change
                 self.pos[i]=self.measured[i]=measured;self.raw[i]=raw;self.steps[i]=steps
                 self.fresh[i]=now;self.good[i]=True
             else:
-                if self.good[i]:print(f'\n{NAMES[i]} rejected reading valid={valid} candidate={measured:+.2f} predicted={predicted:+.2f}')
-                self.good[i]=False;self.pos[i]=predicted
-                if now-self.fresh[i]>=GRACE:raise RuntimeError(f'{NAMES[i]} encoder feedback lost; stopped')
+                reason='I2C read failed' if not samples else 'inconsistent encoder confirmation reads'
+                if self.good[i]:print(f'\n{NAMES[i]}: {reason}; briefly holding last measured angle')
+                self.good[i]=False;self.pos[i]=self.measured[i]
+                if now-self.fresh[i]>=GRACE:raise RuntimeError(f'{NAMES[i]} {reason} for 100ms; stopped')
         return self.pos[:]
     def prompt(self,text):
         print(text,end='',flush=True)

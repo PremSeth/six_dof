@@ -136,12 +136,34 @@ class Tests(unittest.TestCase):
             self.assertEqual(plant.clock,0)  # No servo ramp or software delay.
     def test_outlier_recovery_and_persistent_failure(self):
         good=[(1,1000,0)]*5;bad=[(1,0,0)]*5
-        with patch.object(d,'read',side_effect=[(good,[150,100],False),(bad,[150,100],True),(good,[150,100],False)]),patch.object(d.time,'monotonic',side_effect=[0,0,.02,.04]),redirect_stdout(io.StringIO()):
-            t=d.Tracker(None);t.motion=True;t.update();self.assertFalse(any(t.good))
-            t.update();self.assertTrue(all(t.good));self.assertEqual(t.pos,[0]*5)
-        with patch.object(d,'read',side_effect=[(good,[150,100],False),(bad,[150,100],False),(bad,[150,100],False)]),patch.object(d.time,'monotonic',side_effect=[0,0,.02,.12]),redirect_stdout(io.StringIO()):
+        with patch.object(d,'read',side_effect=[(good,[150,100],False),(bad,[150,100],True),(good,[150,100],False),(good,[150,100],False)]),patch.object(d.time,'monotonic',side_effect=[0,0,.02]),redirect_stdout(io.StringIO()):
+            t=d.Tracker(None);t.motion=True;t.update()
+            self.assertTrue(all(t.good));self.assertEqual(t.pos,[0]*5)
+        missing=[(0,0,0)]*5
+        with patch.object(d,'read',side_effect=[(good,[150,100],False),(missing,[150,100],False),(missing,[150,100],False)]),patch.object(d.time,'monotonic',side_effect=[0,0,.02,.12]),redirect_stdout(io.StringIO()):
             t=d.Tracker(None);t.motion=True;t.update()
             with self.assertRaises(RuntimeError):t.update()
+    def test_backlash_lag_and_reversals_are_not_feedback_loss(self):
+        # Pulses imply substantial travel; encoder sticks, then moves +/-8deg.
+        raws=[1000,1000,1091,1000,909,1000]
+        frames=[([(1,raw,idx*2000)]*5,[150,100],idx!=0) for idx,raw in enumerate(raws)]
+        with patch.object(d,'read',side_effect=frames) as reader,patch.object(d.time,'monotonic',side_effect=[0,0,.02,.04,.06,.08,.1]):
+            t=d.Tracker(None);t.motion=True
+            for raw in raws[1:]:
+                t.update();self.assertTrue(all(t.good))
+                self.assertTrue(all(abs(p-d.delta(raw,1000))<1e-9 for p in t.pos))
+            self.assertEqual(reader.call_count,len(raws))  # No extra polling for ordinary backlash.
+    def test_large_consistent_change_is_accepted(self):
+        good=[(1,1000,0)]*5;shifted=[(1,1200,0)]*5
+        with patch.object(d,'read',side_effect=[(good,[150,100],False)]+[(shifted,[150,100],True)]*3),patch.object(d.time,'monotonic',side_effect=[0,0,.02]):
+            t=d.Tracker(None);t.motion=True;t.update()
+            self.assertTrue(all(t.good));self.assertAlmostEqual(t.pos[0],200*360/4096)
+    def test_missing_reads_hold_measurement_not_pulse_prediction(self):
+        good=[(1,1000,0)]*5;missing=[(0,0,2000)]*5
+        with patch.object(d,'read',side_effect=[(good,[150,100],False),(missing,[150,100],True),(good,[150,100],False)]),patch.object(d.time,'monotonic',side_effect=[0,0,.02,.04]),redirect_stdout(io.StringIO()):
+            t=d.Tracker(None);t.motion=True;t.update()
+            self.assertEqual(t.pos,[0]*5);self.assertFalse(any(t.good))
+            t.update();self.assertTrue(all(t.good))
     def test_no_save_when_servo_disabled(self):
         plant=Plant();plant.servos=[150,None]
         with patch.object(d,'read',side_effect=plant.sample):
