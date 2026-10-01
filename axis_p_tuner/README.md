@@ -56,7 +56,7 @@ rounded down to 19.96875°/s using its 2:1 ratio).
 The updated client requires matching firmware with `HZ=355,933,2000`.
 Motor pulses use a 20kHz
 timer. Host controller nominally 50Hz. Display reports angle, target, error,
-commanded velocity and Kp. Within ±0.35°, requested velocity becomes zero;
+commanded velocity and Kp. Within ±0.5°, requested velocity becomes zero;
 after settling 0.25s, pulses stop (this is not continuous active position hold).
 
 Start with a small clear-path move. Change one gain at a time; test positive and

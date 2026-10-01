@@ -8,6 +8,12 @@ from unittest.mock import patch
 import tune as t
 
 class Tests(unittest.TestCase):
+    def test_half_degree_tolerance(self):
+        self.assertEqual(t.TOL,.5)
+        for sign in (-1,1):
+            self.assertEqual(t.velocity(sign*.5,2,15,0,50,.02),0)
+            self.assertGreater(abs(t.velocity(sign*.51,2,15,0,50,.02)),0)
+
     def test_mapping(self):
         self.assertEqual(t.AXES,{'base':(0,2,20,0),'j1':(1,15,7,1),'j2':(2,15,15,3)})
         self.assertTrue(t.READY.endswith('HZ=355,933,2000'))
