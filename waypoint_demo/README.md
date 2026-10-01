@@ -129,3 +129,8 @@ Tests cover coordinated simulation/return, single-joint isolation, differential
 signs, pulse mapping, servo-only motion, outliers, saved encoder vs target angles,
 queue interruption, fresh-feedback requirements, startup outputs, command caps
 and watchdogs. Tests and stationary checks are NOT physical trajectory validation.
+
+Verified 2026-10-01: 14 Python tests and native firmware tests passed. Firmware
+built/uploaded; all five encoders returned100/100 valid stationary readings,
+maximum frame time7.08ms. Step counts stayedzero and both servo signals stayedoff.
+No real motion was commanded. First physical combined replay remains unverified.
