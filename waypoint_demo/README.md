@@ -48,6 +48,26 @@ waypoints. A physical servo may still finish responding to its last pulse.
 fatal error also disable signals; support the arm first, as servo holding may
 be lost and the claw may release its load. No driver-enable or supply switching.
 
+## Optional active stepper hold
+
+In CONTROL after setting zero, enter `hold` to capture and actively maintain the
+current five measured joint angles. It uses the configured P gains, capped at
+2deg/s corrective speed and5deg/s² acceleration (or the axis's lower setting),
+further reduced by `scale`. Correction starts beyond0.5° and switches off below
+0.25° to reduce chatter. Servo outputs are neither attached nor repositioned.
+Existing servo commands continue holding with heartbeat while this loop runs.
+
+This is a dedicated mode, NOT automatic background holding after every move.
+While holding, Enter or ANY submitted line stops corrections and returns to the
+prompt; that line is consumed, not executed. Then enter `teach`, `off`, a new
+move, or `q` as desired. Active hold is blocked in TEACH and never re-enables
+itself after a stop/fault. Zero and poses are preserved. Do not push/hand-teach
+against active hold; support the arm and exit it first. Stepper holding current
+remains when corrections stop. Fresh-feedback, loop/watchdog and excessive
+displacement checks remain active, including the J1 upright exception. No I/D
+or gravity compensation; this cannot eliminate physical play or guarantee load
+support. Tests simulated drift correction; physical holding is not yet validated.
+
 ## Optional hand-teaching mode
 
 Initialize `j6` and `claw` to suitable command angles and establish `zero` first.

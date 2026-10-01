@@ -254,7 +254,7 @@ class Tests(unittest.TestCase):
                 if cmd=='1':self.pos=[5,10,15,2,-2]
                 return cmd
         tracker=Tracker();book=d.Book();sent=[]
-        inputs=iter(['zero','teach','0','j1 20','j6 160','claw 120','run','1','queue 0 1','control','1','','q'])
+        inputs=iter(['zero','teach','0','j1 20','j6 160','claw 120','run','hold','1','queue 0 1','control','1','','q'])
         def exchange(link,cmd):
             sent.append(cmd);return {'PING':d.READY,'STOP':'OK STOP','OFF':'OK OFF'}[cmd]
         with patch.object(d.sys,'argv',['demo.py']),patch.object(d.glob,'glob',return_value=['fake']),patch.object(d.serial,'Serial',return_value=Link()),patch.object(d,'exchange',side_effect=exchange),patch.object(d,'Tracker',return_value=tracker),patch.object(d,'Book',return_value=book),patch.object(book,'write'),patch.object(d,'move') as move,patch.object(d,'set_servo') as servo,redirect_stdout(io.StringIO()):
@@ -265,5 +265,38 @@ class Tests(unittest.TestCase):
         servo.assert_not_called()
         move.assert_called_once_with(unittest.mock.ANY,tracker,book.poses[1],scale=1.)
         self.assertEqual(sent,['PING','STOP','OFF'])
+
+    def test_active_hold_corrects_drift_and_stops_without_servo_commands(self):
+        plant=Plant();injected=[False]
+        def sample(link):
+            if plant.clock>.3 and not injected[0]:
+                plant.angles[0]+=1.5;plant.angles[1]-=1.;injected[0]=True
+            return plant.sample(link)
+        def interrupt():
+            if plant.clock>5:raise d.MotionStopped('done')
+        with patch.object(d,'read',side_effect=sample),patch.object(d,'exchange',side_effect=plant.exchange),patch.object(d.time,'monotonic',side_effect=lambda:plant.clock),patch.object(d.time,'sleep',side_effect=plant.sleep),redirect_stdout(io.StringIO()):
+            tracker=d.Tracker(None)
+            with self.assertRaises(d.MotionStopped):d.hold_position(None,tracker,interrupt=interrupt)
+        self.assertTrue(injected[0])
+        self.assertLess(abs(plant.angles[0]),.5);self.assertLess(abs(plant.angles[1]),.5)
+        rows=[list(map(int,c.split()[1:])) for c in plant.commands if c.startswith('SET')]
+        self.assertTrue(any(row[0]<0 and row[1]>0 for row in rows))
+        self.assertTrue(all(row[5:]==[0,0] for row in rows))
+        self.assertTrue(all(abs(r)<=math.floor(2*d.SPD[i]) for row in rows for i,r in enumerate(row[:5])))
+        self.assertEqual(plant.commands[-1],'STOP');self.assertNotIn('OFF',plant.commands)
+        self.assertFalse(tracker.motion)
+
+    def test_hold_bad_feedback_and_excess_displacement_stop(self):
+        class Tracker:
+            good=[True]*5;motion=False;calls=0
+            def update(self):
+                self.calls+=1
+                return [0]*5 if self.calls==1 else [5,0,0,0,0]
+        with patch.object(d,'exchange',return_value='OK STOP') as ex,redirect_stdout(io.StringIO()),self.assertRaises(d.MotionStopped):
+            d.hold_position(None,Tracker(),interrupt=lambda:None)
+        ex.assert_called_once_with(None,'STOP')
+        tracker=Tracker();tracker.good=[False]*5
+        with patch.object(d,'exchange') as ex,self.assertRaises(ValueError):d.hold_position(None,tracker)
+        ex.assert_not_called()
 
 if __name__=='__main__':unittest.main()

@@ -157,6 +157,39 @@ def console_stop():
     if select.select([sys.stdin],[],[],0)[0]:
         sys.stdin.readline();raise MotionStopped('Keyboard stop; sequence aborted')
 
+def hold_position(link,tracker,scale=1,interrupt=console_stop):
+    """Explicit active hold until keyboard stop; never enabled by boot or fault."""
+    if not 0<scale<=1:raise ValueError('Scale must be >0 and <=1')
+    target=tracker.update()
+    if not all(tracker.good):raise ValueError('Fresh encoders required before active hold')
+    print('ACTIVE HOLD: joints can move to correct drift. Enter stops and returns to prompt.')
+    print('Holding:',dict(zip(NAMES,target)))
+    previous=[0.]*5;correcting=[False]*5;last=time.monotonic()
+    try:
+        tracker.motion=True
+        while True:
+            interrupt();pos=tracker.update();now=time.monotonic();dt=now-last;last=now
+            if dt>.25:raise RuntimeError('Hold control-loop gap; stopped')
+            rates=[]
+            for i in range(5):
+                error=target[i]-pos[i]
+                if abs(error)>tracking_allowance(i,target[i],pos[i]):
+                    raise MotionStopped(f'{NAMES[i]} moved too far from hold reference ({error:+.2f}°); hold disabled')
+                # Hysteresis avoids cycling at one encoder count near tolerance.
+                if abs(error)>.5:correcting[i]=True
+                elif abs(error)<.25:correcting[i]=False
+                cap=min(SPEED[i],2.)*scale
+                requested=max(-cap,min(cap,KP[i]*error)) if correcting[i] else 0.
+                accel=min(ACCEL[i],5.)*scale
+                previous[i]=max(previous[i]-accel*dt,min(previous[i]+accel*dt,requested))
+                maximum=min(MAX_HZ[i],math.floor(cap*SPD[i]))
+                rates.append(max(-maximum,min(maximum,round(previous[i]*SPD[i]))))
+            # None/zero means leave servo outputs as-is, never attach or reposition.
+            send(link,rates,[None,None])
+            time.sleep(max(0,.02-(time.monotonic()-now)))
+    finally:
+        tracker.motion=False;stop(link)
+
 def wrist_coordinates(values):
     a,b=values[3:5]
     return (b-a)/2,-(a+b)/2  # nominal up-positive pitch, right-positive roll
@@ -272,6 +305,7 @@ class Book:
 HELP='''zero          set current five encoder positions to zero (before saving)
 teach         stop step pulses; hand-teach mode (numbers SAVE, no motion commands)
 control       leave teaching (numbers MOVE with confirmation; enable drives first)
+hold          actively hold current five stepper angles; Enter stops holding
 base 10       move only base to +10°; also j1, j2, wa, wb
 pitch 5       nominal differential pitch; roll 5 = nominal rightward roll
 j6 150        command sixth-axis servo on pin15 (absolute 0–300°)
@@ -335,6 +369,9 @@ def main():
                         if len(parts)==1 and parts[0].isdigit():
                             book.save(parts[0],tracker);book.write(log);print('Saved',parts[0]);continue
                         raise ValueError('TEACH blocks motion. Use a number/save N to capture; control to return to movement commands.')
+                    if parts==['hold']:
+                        if not book.zeroed:raise ValueError('Use zero before active hold')
+                        hold_position(link,tracker,scale);continue
                     if parts==['run'] or (len(parts)==1 and parts[0].isdigit()):
                         keys=book.targets([str(n) for n in book.queue] if parts==['run'] else parts)
                         tracker.pose()  # Require current trustworthy encoders + initialized servos.
