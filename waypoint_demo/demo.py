@@ -13,8 +13,8 @@ NAMES=['base','j1','j2','wa','wb']
 PORTS=[0,1,3,5,4]
 SPD=[3200*r/360 for r in (2,15,15,10,10)]
 KP=[3,2,2,1.2,1.2]
-SPEED=[20,7,15,10,10,30,30]  # Last two: commanded servo deg/s, not measured.
-ACCEL=[30,20,50,2,2,60,60]
+SPEED=[20,7,15,10,10]  # Stepper axes only; servo targets are sent directly.
+ACCEL=[30,20,50,2,2]
 MAX_HZ=[math.floor(v*s) for v,s in zip(SPEED,SPD)]
 READY='READY WAYPOINT_V1 STEP=2,23,0,4,6 DIR=3,22,1,5,7 ENC=0,1,3,5,4 POS=1,0,1,1,1 HZ=355,933,2000,888,888 SERVO=15,14'
 TOL=.5
@@ -179,7 +179,7 @@ def move(link,tracker,target,active=None,scale=1,interrupt=console_stop):
                 previous[i]=velocity
                 cap=min(MAX_HZ[i],math.floor(SPEED[i]*scale*SPD[i]))
                 rates.append(max(-cap,min(cap,round(velocity*SPD[i]))))
-            servos=[start[i]+(target[i]-start[i])*s for i in (5,6)] if replay else tracker.servos[:]
+            servos=target[5:] if replay else tracker.servos[:]
             # Unexpected loss of servo signals must not silently re-enable them.
             if replay and any(v is None for v in tracker.servos):raise RuntimeError('Servo signals were lost; reinitialize explicitly')
             tracker.servos=send(link,rates,servos)
@@ -198,23 +198,11 @@ def move(link,tracker,target,active=None,scale=1,interrupt=console_stop):
 
 def set_servo(link,tracker,index,angle,interrupt=console_stop,scale=1):
     servo_pulse(angle)
-    if not 0<scale<=1:raise ValueError('Scale must be >0 and <=1')
-    tracker.update();initial=tracker.servos[index]
-    # First command cannot be ramped from an unknown physical position.
-    seconds=0 if initial is None else max(.3,1.875*abs(angle-initial)/(SPEED[5+index]*scale),math.sqrt(5.774*abs(angle-initial)/(ACCEL[5+index]*scale)))
-    begun=last=time.monotonic()
+    # No host-side speed limit, interpolation or delay, even at reduced scale.
     try:
-        while True:
-            interrupt();tracker.update()
-            now=time.monotonic()
-            if now-last>.25:raise RuntimeError('Servo control-loop gap; stopped')
-            last=now
-            if initial is not None and tracker.servos[index] is None:raise RuntimeError('Servo signals lost')
-            s=1 if seconds==0 else shape((time.monotonic()-begun)/seconds)[0]
-            values=tracker.servos[:];values[index]=angle if initial is None else initial+(angle-initial)*s
-            tracker.servos=send(link,[0]*5,values)
-            if s>=1:break
-            time.sleep(.02)
+        interrupt();tracker.update()
+        values=tracker.servos[:];values[index]=angle
+        tracker.servos=send(link,[0]*5,values)
     finally:stop(link)
     print(f'{("j6","claw")[index]} command = {tracker.servos[index]:.2f}°; no position feedback')
 
@@ -256,7 +244,7 @@ save 0        save measured five encoder angles + both servo commands
 0             go to saved pose 0 (confirmation required)
 queue 0 1 2 0 replace demo sequence with these saved pose numbers
 run           run queued sequence, stopping at every waypoint
-scale 0.5     half-speed/acceleration cap for subsequent moves; default1
+scale 0.5     half-speed/acceleration for steppers only; default1
 w / list      current angles / saved poses and sequence
 off           stop pulses AND disable servo signals (holding may be lost)
 q             exit; servo signals disabled. Enter during a move stops sequence.

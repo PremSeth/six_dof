@@ -67,16 +67,17 @@ class Tests(unittest.TestCase):
         target,active=d.jog_target(target,'roll',3)
         self.assertEqual(target[3:],[-8,2]);self.assertEqual(d.wrist_coordinates(target),(5,3))
         with self.assertRaises(ValueError):d.jog_target(current,'j7',1)
-    def test_profile_limits_all_seven_coordinates(self):
+    def test_profile_limits_five_stepper_coordinates(self):
         start=[0]*5+[150,100];target=[90,-30,45,10,-10,210,160]
         for scale in (1,.5):
             T=d.duration(start,target,scale)
             for j in range(101):
                 u=j/100;s,ds=d.shape(u)
-                for i,(a,b) in enumerate(zip(start,target)):
+                for i,(a,b) in enumerate(zip(start[:5],target[:5])):
                     self.assertLessEqual(abs((b-a)*ds/T),d.SPEED[i]*scale+1e-8)
                     self.assertLessEqual(abs((b-a)*(60*u-180*u*u+120*u**3)/T**2),d.ACCEL[i]*scale+1e-8)
         self.assertEqual(d.shape(0),(0,0));self.assertEqual(d.shape(1),(1,0))
+        self.assertEqual(d.duration(start,start),d.duration(start,start[:5]+[0,300]))
     def test_book_requires_zero_fresh_data_and_servos(self):
         class Tracker:
             def zero(self):pass
@@ -110,6 +111,8 @@ class Tests(unittest.TestCase):
             self.assertTrue(any(all(r!=0 for r in row[:5]) for row in rows))
             self.assertTrue(all(abs(r)<=cap for row in rows for r,cap in zip(row,d.MAX_HZ)))
             self.assertEqual(plant.commands[-1],'STOP')
+            first=list(map(int,next(c for c in plant.commands if c.startswith('SET')).split()[1:]))
+            self.assertEqual(first[5:],[d.servo_pulse(160),d.servo_pulse(110)])
     def test_only_selected_joint_receives_pulses(self):
         for selected in range(5):
             plant=Plant()
@@ -129,6 +132,8 @@ class Tests(unittest.TestCase):
             if initial[1] is None:self.assertIsNone(plant.servos[1])
             else:self.assertLess(abs(plant.servos[1]-initial[1]),.1)
             self.assertTrue(all(not any(map(int,c.split()[1:6])) for c in plant.commands if c.startswith('SET')))
+            self.assertEqual(len([c for c in plant.commands if c.startswith('SET')]),1)
+            self.assertEqual(plant.clock,0)  # No servo ramp or software delay.
     def test_outlier_recovery_and_persistent_failure(self):
         good=[(1,1000,0)]*5;bad=[(1,0,0)]*5
         with patch.object(d,'read',side_effect=[(good,[150,100],False),(bad,[150,100],True),(good,[150,100],False)]),patch.object(d.time,'monotonic',side_effect=[0,0,.02,.04]),redirect_stdout(io.StringIO()):

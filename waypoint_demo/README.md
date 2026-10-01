@@ -38,8 +38,8 @@ attach, or disable commands. All five encoders must respond.
 
 `w` shows angles, including nominal differential pitch/roll and servo commands.
 `list` shows poses and queue. `help` lists commands. `scale 0.5` reduces subsequent
-motion speed and acceleration caps (default1). Use a slower scale for the first
-combined trial. Scale does not make an unknown first servo position rampable.
+stepper speed and acceleration caps (default1). It does NOT slow either servo.
+Both servos receive their targets directly, with no software ramp or rate limit.
 
 **Enter during motion stops the sequence**, leaving stepper holding current and
 servo signals at their last commands. It does not resume or execute remaining
@@ -57,8 +57,8 @@ be lost and the claw may release its load. No driver-enable or supply switching.
 | j2 | 0/1 | 3 | 15:1 | 2 | 15 | 50 |
 | wa | 4/5 | 5 | nominal 10:1 | 1.2 | 10 | 2 |
 | wb | 6/7 | 4 | nominal 10:1 | 1.2 | 10 | 2 |
-| j6 | servo pin15 | none | — | internal servo | 30 commanded | 60 commanded |
-| claw | servo pin14 | none | — | internal servo | 30 commanded | 60 commanded |
+| j6 | servo pin15 | none | — | internal servo | no software limit | no software limit |
+| claw | servo pin14 | none | — | internal servo | no software limit | no software limit |
 
 All steppers3200ppr. Positive encoder DIR levels1,0,1,1,1. Rates floored to
 355,933,2000,888,888Hz. First-three settings are the user's selected tuning.
@@ -81,16 +81,18 @@ active positional correction. The old distance-braking limiter is NOT used.
 This retains the tuned behavior; large fast moves can still overshoot.
 
 Replay uses a shared quintic time profile with feedforward velocity plus the
-per-axis P correction. Reference duration is chosen to respect all seven
+per-axis P correction. Reference duration respects only the five stepper
 coordinates' nominal speed/acceleration limits. It is a smooth planned reference,
 not the removed distance-based braking heuristic. All reference coordinates
-finish together; physical completion can lag. Stepper endpoints require real
+for the five steppers finish together; physical completion can lag. Both servo
+targets are sent directly at the START of each segment, without interpolation,
+and are not synchronized to finish with the arm. Stepper endpoints require real
 accepted feedback within±0.5°, zero commanded rates, stable0.25s. Servo completion
 means the target pulse was sent, NOT that its shaft was verified there.
 Each waypoint is a stop/settle point; there is no corner blending or automatic
 looping. To close a claw only after reaching a location, save two poses at the
 same arm position with different claw commands, then queue both. Otherwise claw
-and arm move together during the segment.
+receives its final target at segment start while the arm follows its trajectory.
 
 ## Saved data and failure handling
 
