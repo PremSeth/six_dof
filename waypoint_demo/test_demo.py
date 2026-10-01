@@ -57,7 +57,10 @@ class Tests(unittest.TestCase):
         self.assertEqual(d.KP[:3],[3,2,2])
         self.assertEqual(d.SPEED[:3],[20,7,15])
         self.assertEqual(d.ACCEL[:3],[30,20,50])
-        self.assertEqual(d.MAX_HZ,[355,933,2000,888,888])
+        self.assertEqual(d.MAX_HZ,[355,933,2000,1777,1777])
+        self.assertEqual(d.KP[3:],[2,2])
+        self.assertEqual(d.SPEED[3:],[20,20])
+        self.assertEqual(d.ACCEL[3:],[50,50])
         self.assertTrue(d.READY.endswith('SERVO=15,14'))
     def test_servo_mapping_and_limits(self):
         for angle,pulse in ((0,500),(150,1500),(300,2500)):
@@ -199,6 +202,20 @@ class Tests(unittest.TestCase):
                 with self.assertRaises(ValueError):d.move(None,None,target)
             ex.assert_not_called()
 
+    def test_envelope_violation_stops_without_disabling_servos(self):
+        class Tracker:
+            good=[True]*5;servos=[150,100];motion=False
+            calls=0
+            def update(self):
+                self.calls+=1
+                return [0]*5 if self.calls==1 else [4,0,0,0,0]
+        tracker=Tracker()
+        with patch.object(d,'exchange',return_value='OK STOP') as ex,redirect_stdout(io.StringIO()),self.assertRaises(d.TravelEnvelopeStop):
+            d.move(None,tracker,[1,0,0,0,0,150,100],[True,False,False,False,False],interrupt=lambda:None)
+        ex.assert_called_once_with(None,'STOP')
+        self.assertFalse(tracker.motion)
+        self.assertEqual(tracker.servos,[150,100])
+
     def test_ui_saves_measured_not_target_and_aborts_sequence(self):
         class Link:
             def __enter__(self):return self
@@ -212,7 +229,7 @@ class Tests(unittest.TestCase):
         tracker=Tracker();book=d.Book();sent=[]
         inputs=iter(['zero','save 0','j1 10','','save 1','queue 0 1','run','','q'])
         def move(link,t,target,active=None,scale=1):
-            if active is None:raise d.MotionStopped('test stop')
+            if active is None:raise d.TravelEnvelopeStop('test envelope stop')
             t.pos=target[:5];t.pos[1]=9.75
         def exchange(link,cmd):
             sent.append(cmd)

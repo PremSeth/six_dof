@@ -12,11 +12,11 @@ import serial
 NAMES=['base','j1','j2','wa','wb']
 PORTS=[0,1,3,5,4]
 SPD=[3200*r/360 for r in (2,15,15,10,10)]
-KP=[3,2,2,1.2,1.2]
-SPEED=[20,7,15,10,10]  # Stepper axes only; servo targets are sent directly.
-ACCEL=[30,20,50,2,2]
+KP=[3,2,2,2,2]
+SPEED=[20,7,15,20,20]  # Stepper axes only; servo targets are sent directly.
+ACCEL=[30,20,50,50,50]
 MAX_HZ=[math.floor(v*s) for v,s in zip(SPEED,SPD)]
-READY='READY WAYPOINT_V1 STEP=2,23,0,4,6 DIR=3,22,1,5,7 ENC=0,1,3,5,4 POS=1,0,1,1,1 HZ=355,933,2000,888,888 SERVO=15,14'
+READY='READY WAYPOINT_V1 STEP=2,23,0,4,6 DIR=3,22,1,5,7 ENC=0,1,3,5,4 POS=1,0,1,1,1 HZ=355,933,2000,1777,1777 SERVO=15,14'
 TOL=.5
 GRACE=.1
 JUMP_CONFIRM=12.  # Encoder-to-encoder jump, NOT disagreement with pulses.
@@ -152,6 +152,7 @@ class Tracker:
         return self.pos[:]+self.servos[:]
 
 class MotionStopped(Exception):pass
+class TravelEnvelopeStop(MotionStopped):pass
 def console_stop():
     if select.select([sys.stdin],[],[],0)[0]:
         sys.stdin.readline();raise MotionStopped('Keyboard stop; sequence aborted')
@@ -204,7 +205,7 @@ def move(link,tracker,target,active=None,scale=1,interrupt=console_stop):
                 if replay and abs(error)>allowed:raise RuntimeError(f'{NAMES[i]} trajectory tracking error {error:+.2f}° exceeds {allowed:g}°')
                 envelope=travel_allowance(i,start[i],target[i],pos[i])
                 if not min(start[i],target[i])-envelope<=pos[i]<=max(start[i],target[i])+envelope:
-                    raise RuntimeError(f'{NAMES[i]} outside travel envelope: angle={pos[i]:+.2f} start={start[i]:+.2f} target={target[i]:+.2f}')
+                    raise TravelEnvelopeStop(f'{NAMES[i]} outside travel envelope: angle={pos[i]:+.2f} start={start[i]:+.2f} target={target[i]:+.2f}')
                 ff=(target[i]-start[i])*ds/seconds if replay and elapsed<seconds else 0
                 requested=max(-SPEED[i]*scale,min(SPEED[i]*scale,ff+KP[i]*error))
                 if (not replay or elapsed>=seconds) and abs(target[i]-pos[i])<=TOL:requested=0
@@ -338,7 +339,7 @@ def main():
                         # Unselected joints are not driven; use latest servo commands.
                         move(link,tracker,target+tracker.servos[:],active,scale);continue
                     raise ValueError('Unknown command; type help')
-                except MotionStopped as e:print(e)
+                except MotionStopped as e:print(e,'Movement stopped; sequence aborted. Back at prompt; zero and saved poses retained.')
                 except ValueError as e:print(e)
         finally:
             try:off(link)

@@ -9,7 +9,7 @@
 constexpr uint8_t STEP[5]={2,23,0,4,6}, DIR[5]={3,22,1,5,7};
 constexpr uint8_t PORT[5]={0,1,3,5,4}, POS_DIR[5]={1,0,1,1,1};
 // Floor(speed_deg_s * 3200 * ratio / 360): never exceed configured caps.
-constexpr int MAX_HZ[5]={355,933,2000,888,888};
+constexpr int MAX_HZ[5]={355,933,2000,1777,1777};
 constexpr uint8_t SERVO_PIN[2]={15,14}; // sixth axis, claw
 Servo servos[2];
 int servoWidth[2]={};
@@ -68,7 +68,7 @@ bool encoder(uint8_t port,uint16_t &raw){
   return false;
 }
 void command(){
-  if(!strcmp(line,"PING"))Serial.println("READY WAYPOINT_V1 STEP=2,23,0,4,6 DIR=3,22,1,5,7 ENC=0,1,3,5,4 POS=1,0,1,1,1 HZ=355,933,2000,888,888 SERVO=15,14");
+  if(!strcmp(line,"PING"))Serial.println("READY WAYPOINT_V1 STEP=2,23,0,4,6 DIR=3,22,1,5,7 ENC=0,1,3,5,4 POS=1,0,1,1,1 HZ=355,933,2000,1777,1777 SERVO=15,14");
   else if(!strcmp(line,"STOP")){noInterrupts();halt(0);interrupts();lastServoContact=millis();Serial.println("OK STOP");}
   else if(!strcmp(line,"OFF")){noInterrupts();halt(0);interrupts();servosOff();Serial.println("OK OFF");}
   else if(!strcmp(line,"READ")){

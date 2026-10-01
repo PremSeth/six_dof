@@ -9,7 +9,7 @@ int main(){
   assert(!servos[0].attached()&&!servos[1].attached());
   call("SET 1 0 0 0 0 0 0");assert(!moving&&fault==2);
   call("STOP");
-  call("PING");assert(Serial.output.find("HZ=355,933,2000,888,888 SERVO=15,14")!=std::string::npos);
+  call("PING");assert(Serial.output.find("HZ=355,933,2000,1777,1777 SERVO=15,14")!=std::string::npos);
   call("READ");assert(!moving);assert(Serial.output.find("u0=0 u1=0")!=std::string::npos);
   call("SET 0 0 0 0 0 1500 1167");assert(Serial.output=="OK SET\n");
   assert(servos[0].pin==15&&servos[1].pin==14);
@@ -23,11 +23,13 @@ int main(){
   assert(steps[1]!=0);for(int i:{0,2,3,4})assert(steps[i]==0);
   fakeMillis+=301;tick();assert(!moving&&fault==1);
   call("SET 0 0 1 0 0 0 0");assert(Serial.output.find("latched_fault")!=std::string::npos);
-  call("STOP");call("READ");call("SET 355 933 2000 888 888 1500 1167");assert(moving);
+  call("STOP");call("READ");call("SET 355 933 2000 1777 1777 1500 1167");assert(moving);
   fakeMillis+=501;lastCommand=fakeMillis;tick();assert(!moving&&fault==2);
   call("STOP");call("READ");call("SET 0 0 0 0 0 1500 1500");
   fakeMillis+=1501;loop();assert(!servos[0].attached()&&!servos[1].attached());
   call("OFF");assert(servoWidth[0]==0&&servoWidth[1]==0&&!moving);
+  call("SET 0 0 0 1778 0 0 0");assert(fault==3&&!moving);
+  call("STOP");
   Wire.failing=true;call("READ");assert(Serial.output.find("v0=0")!=std::string::npos);
   call("SET 1 0 0 0 0 0 0");assert(!moving&&Serial.output.find("stale_feedback")!=std::string::npos);
   return 0;

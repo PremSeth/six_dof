@@ -55,14 +55,15 @@ be lost and the claw may release its load. No driver-enable or supply switching.
 | base | 2/3 | 0 | 2:1 | 3 | 20 | 30 |
 | j1 | 23/22, NPN | 1 | 15:1 | 2 | 7 | 20 |
 | j2 | 0/1 | 3 | 15:1 | 2 | 15 | 50 |
-| wa | 4/5 | 5 | nominal 10:1 | 1.2 | 10 | 2 |
-| wb | 6/7 | 4 | nominal 10:1 | 1.2 | 10 | 2 |
+| wa | 4/5 | 5 | nominal 10:1 | 2 | 20 | 50 |
+| wb | 6/7 | 4 | nominal 10:1 | 2 | 20 | 50 |
 | j6 | servo pin15 | none | — | internal servo | no software limit | no software limit |
 | claw | servo pin14 | none | — | internal servo | no software limit | no software limit |
 
 All steppers3200ppr. Positive encoder DIR levels1,0,1,1,1. Rates floored to
-355,933,2000,888,888Hz. First-three settings are the user's selected tuning.
-Wrist settings remain conservative and gearbox scaling still needs validation.
+355,933,2000,1777,1777Hz. First-three settings are the user's selected tuning.
+Wrist Kp/acceleration match J2; speed is doubled from10 to20deg/s as requested.
+Wrist gearbox scaling and these faster settings still need physical validation.
 Servos use the previously tested 500–2500µs nominal0–300° mapping, NOT calibrated
 mechanical limits. Their actual angle, speed and completion cannot be measured.
 
@@ -128,6 +129,12 @@ encoder can still cause continued pulses. Keep independent power isolation
 accessible and remain present. There are no calibrated joint limits, collision
 checks, gravity compensation or verified physical stopping distances. Clear
 the ENTIRE path, not only endpoints. Never force a gearbox while hand positioning.
+
+Travel-envelope violations stop all step pulses and abort the current sequence
+but RETURN TO THE PROMPT, preserving session zero and saved poses. Servo signals
+hold their last commands. Nothing resumes automatically; enter a new command
+only after checking the arm. Other fatal feedback/communication/tracking faults
+still exit and disable servo signals. A failed STOP acknowledgment remains fatal.
 
 J1-only backlash exception: around80–100° (upright is90° relative to the user's
 original start zero), the tracking-error allowance is10° plus0.5° tolerance.
