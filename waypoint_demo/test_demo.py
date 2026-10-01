@@ -241,4 +241,29 @@ class Tests(unittest.TestCase):
         self.assertEqual(mover.call_count,2)  # one jog, first queued pose; no second pose
         self.assertEqual(sent,['PING','OFF'])
 
+    def test_hand_teaching_saves_and_blocks_every_motion_type(self):
+        class Link:
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+        class Tracker:
+            raw=[1000]*5;pos=[0.]*5;servos=[150,100];good=[True]*5
+            def zero(self):self.pos=[0.]*5
+            def pose(self):return self.pos[:]+self.servos[:]
+            def prompt(self,text):
+                cmd=next(inputs)
+                if cmd=='1':self.pos=[5,10,15,2,-2]
+                return cmd
+        tracker=Tracker();book=d.Book();sent=[]
+        inputs=iter(['zero','teach','0','j1 20','j6 160','claw 120','run','1','queue 0 1','control','1','','q'])
+        def exchange(link,cmd):
+            sent.append(cmd);return {'PING':d.READY,'STOP':'OK STOP','OFF':'OK OFF'}[cmd]
+        with patch.object(d.sys,'argv',['demo.py']),patch.object(d.glob,'glob',return_value=['fake']),patch.object(d.serial,'Serial',return_value=Link()),patch.object(d,'exchange',side_effect=exchange),patch.object(d,'Tracker',return_value=tracker),patch.object(d,'Book',return_value=book),patch.object(book,'write'),patch.object(d,'move') as move,patch.object(d,'set_servo') as servo,redirect_stdout(io.StringIO()):
+            d.main()
+        self.assertEqual(book.poses[0],[0]*5+[150,100])
+        self.assertEqual(book.poses[1],[5,10,15,2,-2,150,100])
+        self.assertEqual(book.queue,[0,1])
+        servo.assert_not_called()
+        move.assert_called_once_with(unittest.mock.ANY,tracker,book.poses[1],scale=1.)
+        self.assertEqual(sent,['PING','STOP','OFF'])
+
 if __name__=='__main__':unittest.main()

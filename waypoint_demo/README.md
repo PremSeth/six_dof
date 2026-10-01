@@ -48,6 +48,25 @@ waypoints. A physical servo may still finish responding to its last pulse.
 fatal error also disable signals; support the arm first, as servo holding may
 be lost and the claw may release its load. No driver-enable or supply switching.
 
+## Optional hand-teaching mode
+
+Initialize `j6` and `claw` to suitable command angles and establish `zero` first.
+Type `teach` to stop step pulses and enter TEACH. Numbers now SAVE rather than
+move: `0` captures the current pose, hand-position the links, then `1`, `2`, etc.
+`save N` also works. Joint jogs, servo commands and `run` are blocked in TEACH.
+Measured encoder angles are captured; servo angles remain the last commands,
+not hand-measured positions. Do not manually force a powered servo.
+
+The script cannot disable stepper holding current. Support the arm BEFORE
+manually disabling motor drivers, keep logic/encoders powered, and backdrive
+only if mechanically safe. Never force a stiff gearbox. Entering TEACH holds
+servo signals; `off` would disable them and require reinitialization before save.
+
+When finished, restore driver power/enable safely, clear the path, then type
+`control`. This does not move anything. Numbers again replay with confirmation;
+`queue 0 1 2 0` then `run` uses the same saved poses as normal jogging. Switching
+modes preserves zero and saved poses. Restarting the script still resets them.
+
 ## Settings and mapping
 
 | Coordinate | STEP/DIR or servo | Encoder mux | Ratio | Kp | Max °/s | Accel °/s² |

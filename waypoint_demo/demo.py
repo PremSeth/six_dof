@@ -270,6 +270,8 @@ class Book:
         temp=path.with_suffix('.tmp');temp.write_text(json.dumps(data,indent=2));temp.replace(path)
 
 HELP='''zero          set current five encoder positions to zero (before saving)
+teach         stop step pulses; hand-teach mode (numbers SAVE, no motion commands)
+control       leave teaching (numbers MOVE with confirmation; enable drives first)
 base 10       move only base to +10°; also j1, j2, wa, wb
 pitch 5       nominal differential pitch; roll 5 = nominal rightward roll
 j6 150        command sixth-axis servo on pin15 (absolute 0–300°)
@@ -296,18 +298,27 @@ def main():
         print('Absolute encoders:',dict(zip(NAMES,[r*360/4096 for r in tracker.raw])))
         print('Servo COMMAND angles (j6,claw):',tracker.servos)
         if args.check:return
-        book=Book();scale=1.;log=Path(__file__).with_name('last_taught_poses.json')
+        book=Book();scale=1.;teaching=False;log=Path(__file__).with_name('last_taught_poses.json')
         print(HELP)
         print('First servo command may jump from unknown position. Keep full path clear; support arm before off/quit.')
         print('Waypoint audit saved locally; restart requires zero and new poses. No automatic resume.')
         print('J1 backlash zone80–100° allows10° +0.5° tolerance; zero must use your original reference where upright=90°.')
         try:
             while True:
-                parts=tracker.prompt('arm> ').split()
+                parts=tracker.prompt('TEACH (numbers SAVE)> ' if teaching else 'CONTROL (numbers MOVE)> ').split()
                 if not parts:continue
                 try:
                     if parts==['q']:break
                     if parts==['help']:print(HELP);continue
+                    if parts==['teach']:
+                        stop(link);teaching=True
+                        print('TEACH: numbers SAVE; all movement commands blocked. Servo commands are held, not measured.')
+                        print('Support the arm BEFORE manually disabling stepper drivers. Keep Teensy/encoders powered; never force gearboxes.')
+                        continue
+                    if parts==['control']:
+                        teaching=False
+                        print('CONTROL: ensure drives are enabled and path clear. Numbers MOVE after confirmation. No motion started.')
+                        continue
                     if parts==['zero'] or parts==['z']:book.zero(tracker);print('Encoder zero set; servo commands unchanged');continue
                     if parts==['off']:off(link);tracker.servos=[None,None];print('Servo signals OFF; no holding guarantee');continue
                     if parts==['w']:
@@ -320,6 +331,10 @@ def main():
                     if parts[0]=='save' and len(parts)==2:
                         book.save(parts[1],tracker);book.write(log);print('Saved',parts[1]);continue
                     if parts[0]=='queue':book.queue=book.targets(parts[1:]);book.write(log);print('Sequence:',book.queue);continue
+                    if teaching:
+                        if len(parts)==1 and parts[0].isdigit():
+                            book.save(parts[0],tracker);book.write(log);print('Saved',parts[0]);continue
+                        raise ValueError('TEACH blocks motion. Use a number/save N to capture; control to return to movement commands.')
                     if parts==['run'] or (len(parts)==1 and parts[0].isdigit()):
                         keys=book.targets([str(n) for n in book.queue] if parts==['run'] else parts)
                         tracker.pose()  # Require current trustworthy encoders + initialized servos.
