@@ -21,6 +21,7 @@ id_ed25519*
 memory.md
 *.jsonl
 **/last_taught_poses.json
+**/last_taught_poses.tmp
 **/test_results.json
 *.log
 *.before_*

@@ -1,5 +1,9 @@
 # six_dof
 
+For **typed joint targets, saved servo/encoder poses, and queued demo sequences**,
+use [waypoint_demo/README.md](waypoint_demo/README.md). This is the latest demo
+workflow and has dedicated firmware. Individual tuning tools remain available.
+
 For **individual base/J1/J2 P tuning**, use
 [axis_p_tuner/README.md](axis_p_tuner/README.md). Select one axis, set zero,
 adjust Kp and speed, and enter targets. Wrist and sixth-axis tuning are excluded.
