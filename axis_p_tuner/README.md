@@ -6,7 +6,7 @@ the drivers, not this program. Support gravity-loaded links before altering powe
 
 | Axis | STEP | DIR | Encoder mux | Ratio | Positive DIR | Max speed |
 |---|---:|---:|---:|---:|---:|---:|
-| base | 2 | 3 | 0 | 2:1 | 1 | 5°/s |
+| base | 2 | 3 | 0 | 2:1 | 1 | 20°/s |
 | j1 | 23 | 22 | 1 | 15:1 | 0 | 7°/s |
 | j2 | 0 | 1 | 3 | 15:1 | 1 | 15°/s |
 
@@ -51,8 +51,9 @@ Default acceleration 2°/s²; `--accel` allows up to 50. This also sets the
 deceleration limit; increase gradually and check for stalls or overshoot.
 For example: `python tune.py j2 --kp 1 --speed 5 --accel 50`.
 J2 allows `--speed 15` (2000 pulses/s); J1 allows `--speed 7` (933 pulses/s,
-rounded down to 6.9975°/s); base remains capped at 5°/s.
-The updated client requires matching firmware with `HZ=88,933,2000`.
+rounded down to 6.9975°/s); base allows `--speed 20` (355 pulses/s,
+rounded down to 19.96875°/s using its 2:1 ratio).
+The updated client requires matching firmware with `HZ=355,933,2000`.
 Motor pulses use a 20kHz
 timer. Host controller nominally 50Hz. Display reports angle, target, error,
 commanded velocity and Kp. Within ±0.35°, requested velocity becomes zero;

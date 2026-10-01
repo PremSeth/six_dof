@@ -7,7 +7,7 @@
 // ONLY base, J1, J2. No wrist or servo pins are configured or commanded.
 constexpr uint8_t STEP[3]={2,23,0}, DIR[3]={3,22,1};
 constexpr uint8_t PORT[3]={0,1,3}, POS[3]={1,0,1};
-constexpr int MAX_HZ[3]={88,933,2000}; // floor(pulses/degree * 5,7,15 deg/s)
+constexpr int MAX_HZ[3]={355,933,2000}; // floor(pulses/degree * 20,7,15 deg/s)
 IntervalTimer timer;
 volatile int selected=-1,rate=0;
 volatile uint32_t phase=0,count=0,lastCommand=0,lastGood=0;
@@ -65,7 +65,7 @@ bool encoder(uint16_t &raw,const char* &stage,int &code,unsigned &attempts){
 }
 void command(){
   if(!strcmp(line,"PING")){
-    Serial.println("READY AXIS_P_V1 STEP=2,23,0 DIR=3,22,1 ENC=0,1,3 POS=1,0,1 HZ=88,933,2000");
+    Serial.println("READY AXIS_P_V1 STEP=2,23,0 DIR=3,22,1 ENC=0,1,3 POS=1,0,1 HZ=355,933,2000");
   }else if(!strcmp(line,"STOP")){
     noInterrupts();halt(0);interrupts();Serial.println("OK STOP");
   }else if(!strncmp(line,"SELECT ",7)){
