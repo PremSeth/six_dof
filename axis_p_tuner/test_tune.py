@@ -9,8 +9,9 @@ import tune as t
 
 class Tests(unittest.TestCase):
     def test_mapping(self):
-        self.assertEqual(t.AXES,{'base':(0,2,5,0),'j1':(1,15,5,1),'j2':(2,15,15,3)})
-        self.assertTrue(t.READY.endswith('HZ=88,666,2000'))
+        self.assertEqual(t.AXES,{'base':(0,2,5,0),'j1':(1,15,7,1),'j2':(2,15,15,3)})
+        self.assertTrue(t.READY.endswith('HZ=88,933,2000'))
+        self.assertEqual(math.floor(t.AXES['j1'][2]*3200*t.AXES['j1'][1]/360),933)
     def test_positive_parameters(self):
         self.assertEqual(t.positive('1.2'),1.2)
         for value in ('nan','inf','0','-1','bad'):
@@ -125,7 +126,7 @@ class Tests(unittest.TestCase):
         serial.assert_not_called()
 
     def test_speed_ceilings_rejected_before_serial(self):
-        for axis,speed in (('j2','15.1'),('base','5.1'),('j1','5.1')):
+        for axis,speed in (('j2','15.1'),('base','5.1'),('j1','7.1')):
             with patch.object(t.sys,'argv',['tune.py',axis,'--speed',speed]),patch.object(t.serial,'Serial') as serial,patch.object(t.sys,'stderr',io.StringIO()),self.assertRaises(SystemExit) as error:
                 t.main()
             self.assertEqual(error.exception.code,2)
