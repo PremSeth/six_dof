@@ -36,6 +36,22 @@ class Plant:
         if self.clock>180:raise RuntimeError('Simulation did not finish')
 
 class Tests(unittest.TestCase):
+    def test_j1_zone_allowance_is_local_and_bidirectional(self):
+        for reference,measured in ((85,95),(95,85),(100,110),(80,70)):
+            self.assertEqual(d.tracking_allowance(1,reference,measured),10.5)
+            self.assertLessEqual(abs(reference-measured),d.tracking_allowance(1,reference,measured))
+        self.assertGreater(abs(90-102),d.tracking_allowance(1,90,102))
+        for reference,measured in ((20,30),(120,110)):
+            self.assertEqual(d.tracking_allowance(1,reference,measured),4)
+        for axis in (0,2,3,4):
+            self.assertEqual(d.tracking_allowance(axis,90,100),4)
+            self.assertEqual(d.travel_allowance(axis,0,100,110),2)
+        self.assertEqual(d.travel_allowance(1,0,100,110),10.5)
+        self.assertEqual(d.travel_allowance(1,100,80,70),10.5)
+        self.assertEqual(d.travel_allowance(1,0,20,30),2)
+        self.assertEqual(d.travel_allowance(1,0,100,120),2)
+        self.assertEqual(d.TOL,.5)  # Endpoint accuracy is NOT relaxed.
+
     def test_mapping_and_tuned_limits(self):
         self.assertEqual(d.PORTS,[0,1,3,5,4])
         self.assertEqual(d.KP[:3],[3,2,2])

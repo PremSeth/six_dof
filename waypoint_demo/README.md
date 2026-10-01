@@ -129,6 +129,17 @@ accessible and remain present. There are no calibrated joint limits, collision
 checks, gravity compensation or verified physical stopping distances. Clear
 the ENTIRE path, not only endpoints. Never force a gearbox while hand positioning.
 
+J1-only backlash exception: around80–100° (upright is90° relative to the user's
+original start zero), the tracking-error allowance is10° plus0.5° tolerance.
+It applies when the interval between reference and measurement intersects that
+zone, in either direction. Travel-envelope allowance also becomes10.5° only
+for J1 segments crossing that zone and measured positions within69.5–110.5°.
+All other axes/regions retain the checks above. Endpoint tolerance remains±0.5°.
+This accepts measured backlash, not commanded jumps. It does NOT reduce speed,
+prevent a gravity-driven drop, or validate mechanical safety. Use the SAME zero
+reference each session; an arbitrary zero would put this exception in the wrong
+physical region. No motion was commanded while implementing this exception.
+
 ## Offline verification
 
 ```bash

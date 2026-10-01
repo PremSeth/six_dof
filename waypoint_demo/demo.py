@@ -21,6 +21,19 @@ TOL=.5
 GRACE=.1
 JUMP_CONFIRM=12.  # Encoder-to-encoder jump, NOT disagreement with pulses.
 CONFIRM_SPREAD=4.
+J1_ZONE=(80.,100.)
+J1_BACKLASH=10.+TOL  # 10 degrees plus encoder/endpoint tolerance.
+
+def tracking_allowance(axis,reference,measured):
+    low,high=J1_ZONE
+    crosses=min(reference,measured)<=high and max(reference,measured)>=low
+    return J1_BACKLASH if axis==1 and crosses else 4.
+
+def travel_allowance(axis,start,target,measured):
+    low,high=J1_ZONE
+    crosses=min(start,target)<=high and max(start,target)>=low
+    near=low-J1_BACKLASH<=measured<=high+J1_BACKLASH
+    return J1_BACKLASH if axis==1 and crosses and near else 2.
 
 def delta(a,b):return ((a-b+2048)%4096-2048)*360/4096
 def count_delta(a,b):return ((a-b+2**31)%2**32)-2**31
@@ -187,8 +200,10 @@ def move(link,tracker,target,active=None,scale=1,interrupt=console_stop):
                 if not active[i]:rates.append(0);continue
                 ref=start[i]+(target[i]-start[i])*s
                 error=ref-pos[i]
-                if replay and abs(error)>4:raise RuntimeError(f'{NAMES[i]} trajectory tracking error >4°')
-                if not min(start[i],target[i])-2<=pos[i]<=max(start[i],target[i])+2:
+                allowed=tracking_allowance(i,ref,pos[i])
+                if replay and abs(error)>allowed:raise RuntimeError(f'{NAMES[i]} trajectory tracking error {error:+.2f}° exceeds {allowed:g}°')
+                envelope=travel_allowance(i,start[i],target[i],pos[i])
+                if not min(start[i],target[i])-envelope<=pos[i]<=max(start[i],target[i])+envelope:
                     raise RuntimeError(f'{NAMES[i]} outside travel envelope: angle={pos[i]:+.2f} start={start[i]:+.2f} target={target[i]:+.2f}')
                 ff=(target[i]-start[i])*ds/seconds if replay and elapsed<seconds else 0
                 requested=max(-SPEED[i]*scale,min(SPEED[i]*scale,ff+KP[i]*error))
@@ -284,6 +299,7 @@ def main():
         print(HELP)
         print('First servo command may jump from unknown position. Keep full path clear; support arm before off/quit.')
         print('Waypoint audit saved locally; restart requires zero and new poses. No automatic resume.')
+        print('J1 backlash zone80–100° allows10° +0.5° tolerance; zero must use your original reference where upright=90°.')
         try:
             while True:
                 parts=tracker.prompt('arm> ').split()
